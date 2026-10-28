@@ -55,7 +55,10 @@ jobs:
                   with urllib.request.urlopen(request, timeout=30) as response:
                       return json.load(response)
               except urllib.error.HTTPError as error:
-                  message = json.loads(error.read()).get('message', str(error))
+                  detail = json.loads(error.read())
+                  message = detail.get('message', str(error))
+                  if detail.get('errors'):
+                      message += ': ' + json.dumps(detail['errors'])
                   raise RuntimeError(f'GitHub API {error.code}: {message}') from None
 
           comparison = api(f'/repos/{repository}/compare/{base}...{head}?per_page=1')
