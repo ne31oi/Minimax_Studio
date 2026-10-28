@@ -73,6 +73,7 @@ jobs:
                       'title': 'Update from EvgenRublev/Minimax_Studio',
                       'head': head,
                       'base': base,
+                      'maintainer_can_modify': False,
                       'body': (
                           'Обновления из исходного репозитория '
                           f'[{upstream}](https://github.com/{upstream}) → `{base}`.\n\n'
