@@ -1,0 +1,86 @@
+name: Upstream updates
+
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [.github/workflows/sync-upstream.yml]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+jobs:
+  open-update-pr:
+    if: github.repository == 'ne31oi/Minimax_Studio'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # No checkout: upstream code is never executed by this workflow.
+      - name: Check upstream and open a pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+
+          repository = os.environ['GITHUB_REPOSITORY']
+          upstream = 'EvgenRublev/Minimax_Studio'
+          base = 'main'
+          head = 'EvgenRublev:main'
+
+          def api(path, data=None):
+              request = urllib.request.Request(
+                  'https://api.github.com' + path,
+                  data=json.dumps(data).encode() if data is not None else None,
+                  headers={
+                      'Authorization': 'Bearer ' + os.environ['GH_TOKEN'],
+                      'Accept': 'application/vnd.github+json',
+                      'X-GitHub-Api-Version': '2022-11-28',
+                      'User-Agent': 'Minimax-Studio-upstream-sync',
+                  },
+              )
+              try:
+                  with urllib.request.urlopen(request, timeout=30) as response:
+                      return json.load(response)
+              except urllib.error.HTTPError as error:
+                  message = json.loads(error.read()).get('message', str(error))
+                  raise RuntimeError(f'GitHub API {error.code}: {message}') from None
+
+          comparison = api(f'/repos/{repository}/compare/{base}...{head}?per_page=1')
+          summary = 'Upstream is already included in main.'
+          if comparison['ahead_by'] > 0:
+              query = urllib.parse.urlencode({'state': 'open', 'base': base, 'head': head})
+              existing = api(f'/repos/{repository}/pulls?{query}')
+              if existing:
+                  summary = 'Updates are available in ' + existing[0]['html_url']
+              else:
+                  pull = api(f'/repos/{repository}/pulls', {
+                      'title': 'Update from EvgenRublev/Minimax_Studio',
+                      'head': head,
+                      'base': base,
+                      'body': (
+                          'Обновления из исходного репозитория '
+                          f'[{upstream}](https://github.com/{upstream}) → `{base}`.\n\n'
+                          'Проверь изменения и нажми **Merge pull request**, когда будешь готов. '
+                          'Автоматическое слияние отключено. При конфликтах сначала разреши их.\n\n'
+                          'PR создан автоматически. Новые коммиты исходного репозитория '
+                          'будут появляться в этом же PR, пока он открыт.'
+                      ),
+                  })
+                  summary = 'Created ' + pull['html_url']
+          print(summary)
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as output:
+              output.write(summary + '\n')
+          PY
