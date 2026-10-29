@@ -48,6 +48,34 @@ export interface ModelDef {
 
 export const MODELS: ModelDef[] = [
   {
+    id: 'open_h3_base', label: 'Open H3 — FL2VA Pruned INT8',
+    relPath: 'diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors',
+    url: 'https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors?download=true',
+    sizeBytes: 20970379616, sizeLabel: '~21 GB', category: 'diffusion', optional: true,
+  },
+  {
+    id: 'open_h3_turbo', label: 'Open H3 — FL2VA Turbo v1.2',
+    relPath: 'loras/minimax_h3_fl2v_turbo_4step_v1.2_768p_comfyui_bf16.safetensors',
+    url: 'https://huggingface.co/lightx2v/Minimax-h3-Turbo/resolve/main/minimax_h3_fl2v_turbo_4step_v1.2_768p_comfyui_bf16.safetensors?download=true',
+    sizeBytes: 1956193000, sizeLabel: '~1.96 GB', category: 'lora', optional: true,
+  },
+  {
+    id: 'open_h3_sharp', label: 'Open H3 — LMS Sharp',
+    relPath: 'loras/minimax_h3_lms_v1.0_r64.safetensors',
+    url: 'https://huggingface.co/Alissonerdx/Minimax-H3-ComfyUI/resolve/main/loras/minimax_h3_lms_v1.0_r64.safetensors?download=true',
+    sizeBytes: 1239664536, sizeLabel: '~1.24 GB', category: 'lora', optional: true,
+  },
+  {
+    id: 'open_h3_refiner',
+    label: 'Open H3 Refiner LoRA (Kijai, экспериментальная)',
+    relPath: 'loras/minimax_h3_open_regenerate_2k_refiner_rank_384_bf16.safetensors',
+    url: 'https://huggingface.co/Kijai/MiniMax-H3-experimental/resolve/7afab6c/loras/minimax_h3_open_regenerate_2k_refiner_rank_384_bf16.safetensors?download=true',
+    sizeBytes: 5868409512,
+    sizeLabel: '~5.87 GB',
+    category: 'lora',
+    optional: true,
+  },
+  {
     id: 'diffusion',
     // (правка 293) Основная модель — вернули обратно (была лучше по качеству).
     // Kijai/MiniMax-H3-experimental. 4-шаговая генерация (FastH3 VSA DataFree), ~22.9 ГБ.

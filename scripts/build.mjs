@@ -18,6 +18,8 @@
  *   npm run build:default
  */
 import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { join, dirname } from 'node:path';
 
 // (правка 716) NEXT_BUILD_HEAP_MB валидируется: 0 молча превращался в 8192,
 // а отрицательное значение давало «--max-old-space-size=-1», который Node
@@ -39,17 +41,20 @@ const prev = rawOptions
   .join(' ')
   .replace(/\s+/g, ' ')
   .trim();
-const env = { ...process.env, NODE_OPTIONS: prev ? `${prev} ${flag}` : flag };
+const root = dirname(dirname(fileURLToPath(import.meta.url)));
+const shim = join(root, 'scripts', 'windows-readlink-fix.cjs');
+const fix = process.platform === 'win32' ? `--require "${shim.replace(/\\/g, '/')}"` : '';
+const env = { ...process.env, NODE_OPTIONS: [prev, flag, fix].filter(Boolean).join(' ') };
 
 console.log(`[build] next build --webpack  (heap = ${heapMb} MB)`);
 // (правка 716) --no-install: без него npx при отсутствующем node_modules
 // ПРЕДЛОЖИТ скачать next из реестра и спросит «Ok to proceed? (y)» — в
 // неинтерактивном контексте сборка зависала навсегда вместо падения.
-const r = spawnSync('npx', ['--no-install', 'next', 'build', '--webpack'], {
+const r = spawnSync(process.execPath, [join(root, 'node_modules', 'next', 'dist', 'bin', 'next'), 'build', '--webpack'], {
   env,
   stdio: 'inherit',
   // На Windows npx это npx.cmd — нужен shell, чтобы он резолвился.
-  shell: process.platform === 'win32',
+  shell: false,
 });
 
 if (r.error) {

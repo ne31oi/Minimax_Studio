@@ -100,7 +100,7 @@ export function RefineView() {
 
   const params = useRefineTarget((s) => s.params)
   const patchParams = useRefineTarget((s) => s.patchParams)
-  const { target, steps, strength, mode, chunkSec, refDetail, targetMp } = params
+  const { target, steps, strength, mode, chunkSec, refDetail, targetMp, profile } = params
 
   // (правка 509) Промпт — в сторе (переживает переключение вкладок);
   // вводится вручную для источников с диска (у них нет .meta.json).
@@ -352,6 +352,7 @@ export function RefineView() {
     setLastError(null)
 
     const task = {
+      profile,
       mode: mode as 'whole' | 'chunks',
       source: { filename: src.filename, subfolder: src.subfolder ?? '' },
       ...(src.inputSource ? { inputSource: src.inputSource } : {}),
@@ -387,7 +388,7 @@ export function RefineView() {
     }
     enqueueRefine(task)
     toast.info(`Refine поставлен в очередь: ${src.filename}`)
-  }, [mode, target, targetMp, steps, strength, prompt, chunkSec, uploadingSrc, refDetail, userRefs])
+  }, [mode, target, targetMp, steps, strength, prompt, chunkSec, uploadingSrc, refDetail, userRefs, profile])
 
   const cancel = useCallback(async () => {
     await cancelActiveRefines()
@@ -788,13 +789,14 @@ export function RefineView() {
             >
               Целевое разрешение
             </Label>
-            <Select value={target} onValueChange={(v) => patchParams({ target: v as 'same' | '720' | '1080' | 'free' })}>
+            <Select value={target} onValueChange={(v) => patchParams({ target: v as 'same' | '720' | '1080' | '1440' | 'free' })}>
               <SelectTrigger className="w-full h-9 bg-[var(--surface-2)] border-border text-sm rounded-md">
                 <SelectValue placeholder="Разрешение" />
               </SelectTrigger>
               <SelectContent className="bg-[var(--surface-3)] border-border">
                 <SelectItem value="720">720p (быстрее, безопаснее по VRAM)</SelectItem>
-                <SelectItem value="1080">1080p (медленнее, максимум детализации)</SelectItem>
+                <SelectItem value="1080">1080p (медленнее)</SelectItem>
+                <SelectItem value="1440">1440p (2K, требует больше памяти)</SelectItem>
                 <SelectItem value="free">Свободное (в Мп, до 4K)</SelectItem>
                 <SelectItem value="same">Как в исходнике (только детализация)</SelectItem>
               </SelectContent>
@@ -877,6 +879,19 @@ export function RefineView() {
             )}
           </div>
 
+          <div className="space-y-2">
+            <Label className="text-xs text-muted-foreground font-medium">Режим обработки</Label>
+            <Select value={profile} onValueChange={(v) => patchParams({ profile: v as 'standard' | 'open-h3' })}>
+              <SelectTrigger className="w-full h-9 bg-[var(--surface-2)] border-border text-sm rounded-md"><SelectValue /></SelectTrigger>
+              <SelectContent className="bg-[var(--surface-3)] border-border">
+                <SelectItem value="standard">Обычный Refine</SelectItem>
+                <SelectItem value="open-h3">Open H3 · Kijai (эксперимент)</SelectItem>
+              </SelectContent>
+            </Select>
+            {profile === 'open-h3' && <p className="text-xs text-muted-foreground">3 шага, Refiner Kijai + Turbo v1.2 + Sharp на FL2VA INT8. Экспериментальный вариант Open H3 для ComfyUI; результат может отличаться от полного рецепта NVIDIA.</p>}
+          </div>
+
+          {profile === 'standard' && <>
           {/* Профиль прохода (сигма-лестница Pass 2 генерации) */}
           <div className="space-y-2">
             <Label
@@ -960,6 +975,7 @@ export function RefineView() {
             </div>
           </div>
 
+          </>}
           {/* Запуск (правка 261): можно ставить в очередь, пока идёт задача */}
           <div className="flex gap-2 pt-1">
             <Button

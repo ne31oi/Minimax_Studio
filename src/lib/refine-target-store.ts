@@ -34,8 +34,9 @@ export interface RefineSource {
 
 /** Параметры вкладки Refine — переживают переключение вкладок. */
 export interface RefineUiParams {
+  profile: 'standard' | 'open-h3'
   /** (правка 494) 'free' — свободное разрешение в Мп (см. targetMp). */
-  target: 'same' | '720' | '1080' | 'free'
+  target: 'same' | '720' | '1080' | '1440' | 'free'
   mode: 'whole' | 'chunks'
   chunkSec: '3' | '5' | '8'
   /** '2' = лёгкий ×2-рецепт (BasicScheduler 2 шага, denoise 0.2).
@@ -53,6 +54,7 @@ export interface RefineUiParams {
 }
 
 const DEFAULT_PARAMS: RefineUiParams = {
+  profile: 'standard',
   // (правка 413) Дефолт 'same' (без апскейла): дефолтные 720 молча
   // разгоняли 480p-исходник до ~1.25 Мп (напр. 1120×480 → 1696×736) —
   // рефайн шёл в ~2,3 раза дольше ожидаемого, а пользователь видел

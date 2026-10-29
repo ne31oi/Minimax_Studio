@@ -12,6 +12,7 @@ export const REFINE_PASS2_SIGMA = 0.9035
 
 /** Шагов в Pass 2 двухпроходной генерации. */
 export const REFINE_PASS2_STEPS = 3
+export const OPEN_H3_SIGMAS = '0.909375, 0.857143, 0.666667, 0'
 
 /** Лестница сигм Refine = лестница Pass 2 в генерации (SIGMA_VARIANTS). */
 const SIGMA_LADDERS: Record<number, string> = {

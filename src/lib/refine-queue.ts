@@ -19,6 +19,7 @@ import { acquireComfyTurn, isComfyTurnActive } from './comfy-turn'
 import { useGalleryRefresh } from './gallery-refresh-store'
 
 export interface RefineTask {
+  profile?: 'standard' | 'open-h3'
   mode: 'whole' | 'chunks'
   /** Оригинал из галереи (output), из которого делается рефайн. */
   source: { filename: string; subfolder: string }
@@ -196,6 +197,7 @@ async function runTask(id: string, task: RefineTask): Promise<void> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       sourceFilename: task.source.filename,
+      profile: task.profile,
       sourceSubfolder: task.source.subfolder,
       ...(task.inputSource ? { inputSource: task.inputSource } : {}),
       // (правка 494) free-режим: сервер конвертирует Мп в короткую сторону

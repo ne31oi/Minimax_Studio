@@ -3,6 +3,8 @@
 
 # next.js
 /.next/
+/.next-before-openh3/
+/.next-openh3/
 /out/
 
 # production

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { promises as fs } from 'fs'
-import { existsSync } from 'fs'
+import { existsSync, statSync } from 'fs'
 import path from 'path'
 import { submitRefine, submitWorkflowJson } from '@/lib/comfy/minimax-h3-client'
 import { setActivePrompt } from '@/lib/comfy/progress-tracker'
@@ -80,6 +80,7 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json() as {
       sourceFilename?: string
+      profile?: 'standard' | 'open-h3'
       sourceSubfolder?: string
       target?: 'same' | 'x2' | number
       prompt?: string
@@ -139,18 +140,44 @@ export async function POST(req: NextRequest) {
     }
 
     const cfg = getAppConfig()
+    const openH3 = body.profile === 'open-h3'
+    const openH3Name = 'minimax_h3_open_regenerate_2k_refiner_rank_384_bf16.safetensors'
+    const openH3Turbo = 'minimax_h3_fl2v_turbo_4step_v1.2_768p_comfyui_bf16.safetensors'
+    const openH3Sharp = 'minimax_h3_lms_v1.0_r64.safetensors'
+    const openH3Base = 'minimax_h3_fl2va_pruned_int8_convrot.safetensors'
+    if (openH3) {
+      const roots = [path.join(cfg.comfyRoot, 'ComfyUI', 'models', 'loras'),
+        ...cfg.modelExtraPaths.filter((p) => p.category === 'loras').map((p) => p.path)]
+      const present = roots.some((root) => {
+        try { return statSync(path.join(root, openH3Name)).size === 5868409512 } catch { return false }
+      })
+      if (!present) return NextResponse.json({ error: 'Скачайте Open H3 Refiner LoRA (Kijai) в Настройках → Модели.' }, { status: 400 })
+      for (const [name, size] of [[openH3Turbo, 1956193000], [openH3Sharp, 1239664536]] as const) {
+        if (!roots.some((root) => { try { return statSync(path.join(root, name)).size === size } catch { return false } })) {
+          return NextResponse.json({ error: `Для Open H3 отсутствует или не полностью скачана LoRA: ${name}. Откройте Настройки → Модели.` }, { status: 400 })
+        }
+      }
+      let baseReady = false
+      try { baseReady = statSync(path.join(cfg.comfyRoot, 'ComfyUI', 'models', 'diffusion_models', openH3Base)).size === 20970379616 } catch { /* missing */ }
+      if (!baseReady) {
+        return NextResponse.json({ error: `Для Open H3 отсутствует или не полностью скачана модель ${openH3Base}. Откройте Настройки → Модели.` }, { status: 400 })
+      }
+      body.steps = 3
+      body.sigmaStart = 0.909375
+    }
 
     // (правка 483) LoRA из настроек — как в /api/comfy/generate: модель
     // получает их цепочкой customLoras (турбо-лора — обычная запись, ON по
     // умолчанию), триггерные слова — суффиксом conditioning-промпта (promptSuffix).
     // В мету промпт пишется БЕЗ триггеров — «Повторить» добавит их заново
     // по актуальному списку, иначе бы они накапливались (правка 89).
-    const customLoraEntries = enabledCustomLoras()
-    const customLoras = customLoraEntries.length > 0
+    const customLoraEntries = openH3 ? [] : enabledCustomLoras()
+    const customLoras = openH3 ? [openH3Name, openH3Turbo, openH3Sharp].map((name) => ({ name, strength: 1 })) : customLoraEntries.length > 0
       ? customLoraEntries.map((e) => ({ name: e.name, strength: e.strength }))
       : undefined
     const loraSuffix = loraTriggerSuffix(customLoraEntries)
     const loraParams = {
+      openH3,
       ...(customLoras ? { customLoras } : {}),
       ...(loraSuffix ? { promptSuffix: loraSuffix } : {}),
     }
@@ -221,6 +248,8 @@ export async function POST(req: NextRequest) {
     // refine-template.ts: сэмплер euler (res_multistep на «лёгком» 2-шаговом
     // проходе), LowVRAMAttention + ChunkFeedForward всегда включены.
     const refineCommonMeta = {
+      refine_profile: openH3 ? 'open-h3' : 'standard',
+      ...(openH3 ? { diffusion_model: openH3Base } : {}),
       pipeline: 'full',
       pass1_steps: body.steps ?? 3,
       pass1_sampler: body.steps === 2 ? 'res_multistep' : 'euler',
@@ -303,7 +332,7 @@ export async function POST(req: NextRequest) {
           submitWorkflowJson(
             buildChunkedRefineWorkflow({
               sourceVideo: inName,
-              diffusionModel: cfg.diffusionModel || undefined,
+              diffusionModel: openH3 ? openH3Base : cfg.diffusionModel || undefined,
               sourceWidth: srcW,
               sourceHeight: srcH,
               sourceFrames: probe.frames,
@@ -331,7 +360,7 @@ export async function POST(req: NextRequest) {
           setActivePrompt(run.result.prompt_id)
           recordPendingMetaRaw(run.result.prompt_id, {
             prompt: userPrompt,
-            model_type: 'minimax_h3_ref2va',
+            model_type: openH3 ? 'minimax_h3_fl2va' : 'minimax_h3_ref2va',
             workflow: 'refine-chunks-latent-chain',
             generation_mode: 'refine',
             refine_mode: 'chunks',
@@ -370,7 +399,7 @@ export async function POST(req: NextRequest) {
       const run = await runGeneration(() =>
         submitRefine({
           sourceVideo: inName,
-          diffusionModel: cfg.diffusionModel || undefined,
+          diffusionModel: openH3 ? openH3Base : cfg.diffusionModel || undefined,
           sourceWidth: srcW,
           sourceHeight: srcH,
           targetShortSide: target,
@@ -393,7 +422,7 @@ export async function POST(req: NextRequest) {
         setActivePrompt(run.result.prompt_id)
         recordPendingMetaRaw(run.result.prompt_id, {
           prompt: userPrompt,
-          model_type: 'minimax_h3_ref2va',
+          model_type: openH3 ? 'minimax_h3_fl2va' : 'minimax_h3_ref2va',
           workflow: 'refine-v2v-latent-upscaler',
           generation_mode: 'refine',
           refine_mode: 'whole',
@@ -592,7 +621,7 @@ export async function POST(req: NextRequest) {
         submitWorkflowJson(
           buildChunkedRefineWorkflow({
             sourceVideo: destName,
-            diffusionModel: cfg.diffusionModel || undefined,
+            diffusionModel: openH3 ? openH3Base : cfg.diffusionModel || undefined,
             videoFormat: getVideoFormatSettings(), // (правка 386)
             // (правка 382) lossless-ветка «Частями»: окна режутся токенами
             // из сохранённого латента; размеры = канва латента
@@ -633,7 +662,7 @@ export async function POST(req: NextRequest) {
         // галереи, из которого сделан рефайн.
         recordPendingMetaRaw(run.result.prompt_id, {
           prompt: resolvedPrompt ?? '',
-          model_type: 'minimax_h3_ref2va',
+          model_type: openH3 ? 'minimax_h3_fl2va' : 'minimax_h3_ref2va',
           workflow: 'refine-chunks-latent-chain',
           generation_mode: 'refine',
           refine_mode: 'chunks',
@@ -673,7 +702,7 @@ export async function POST(req: NextRequest) {
     const run = await runGeneration(() =>
       submitRefine({
         sourceVideo: destName,
-        diffusionModel: cfg.diffusionModel || undefined,
+        diffusionModel: openH3 ? openH3Base : cfg.diffusionModel || undefined,
         // (правка 376) lossless-ветка: первозданный латент генерации;
         // (правка 382) размеры = канва латента (геометрия всей ветки от неё)
         ...(sourceLatent && { sourceLatent, sourceFrames: probe.frames }),
@@ -712,7 +741,7 @@ export async function POST(req: NextRequest) {
       // роутом на 'done' (работает и с закрытым браузером).
       recordPendingMetaRaw(run.result.prompt_id, {
         prompt: resolvedPrompt ?? '',
-        model_type: 'minimax_h3_ref2va',
+        model_type: openH3 ? 'minimax_h3_fl2va' : 'minimax_h3_ref2va',
         workflow: 'refine-v2v-latent-upscaler',
         generation_mode: 'refine',
         refine_mode: 'whole',
