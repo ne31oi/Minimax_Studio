@@ -37,7 +37,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 
-import { MentionTextarea, type MentionItem } from './mention-textarea' // (правка 512)
+import { MentionTextarea } from './mention-textarea' // (правка 512)
+import { useRefModMentions } from '@/hooks/use-refmod-mentions'
 // (правка 515) Полное поле промпта — как на вкладке «Генерация»:
 // PromptEditButton + PromptEditorDialog (полноэкранный редактор),
 // VoiceInputButton (диктовка), PromptQuality (живые подсказки),
@@ -154,6 +155,7 @@ export function ControlNetView() {
   // источника (рефы обычно живут дольше конкретного контрольного видео).
   // (правка 502) Массив — в сторе вкладки (см. выше).
   const refImages = useControlNetTarget((s) => s.refImages)
+  const refModMentions = useRefModMentions('controlnet', refImages.map(r => ({...r, name:r.name,kind:'image' as const})), prompt, setPrompt)
   const [uploadingRefs, setUploadingRefs] = useState(false)
   const [refsDragOver, setRefsDragOver] = useState(false)
   const refsInputRef = useRef<HTMLInputElement>(null)
@@ -1197,14 +1199,7 @@ export function ControlNetView() {
               onChange={setPrompt}
               onKeyDown={handleKeyDown}
               placeholder="A character with <Picture 1> [what they are doing], [place, time of day], [lighting and mood]. The camera [movement/shot]. He/She says: <d>short line.</d> …"
-              mentions={params.preprocessOnly ? undefined : refImages.map((r, i): MentionItem => ({
-                id: r.id,
-                label: `Picture ${i + 1}`,
-                trigger: `<Picture ${i + 1}>`,
-                kind: 'image',
-                color: 'bg-purple-500/15 text-purple-400',
-                previewUrl: r.previewUrl,
-              }))}
+              mentions={params.preprocessOnly ? undefined : refModMentions}
               className="h-[220px] pr-12"
             />
             {/* (правка 717) Кнопки поля — вертикальная колонка с ровными
@@ -1237,14 +1232,7 @@ export function ControlNetView() {
               onSave={setPrompt}
               onSaveAndRun={() => { void startWithHistory() }}
               placeholder="A character with <Picture 1> [what they are doing], [place, time of day], [lighting and mood]. …"
-              mentions={params.preprocessOnly ? undefined : refImages.map((r, i): MentionItem => ({
-                id: r.id,
-                label: `Picture ${i + 1}`,
-                trigger: `<Picture ${i + 1}>`,
-                kind: 'image',
-                color: 'bg-purple-500/15 text-purple-400',
-                previewUrl: r.previewUrl,
-              }))}
+              mentions={params.preprocessOnly ? undefined : refModMentions}
               improveOptions={{ mode: 'controlnet' }}
             />
             {/* (правка 691) Диалог «Исправить промпт» из поля: задание +

@@ -39,7 +39,13 @@
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts",
     ".next-verify/types/**/*.ts",
-    ".next-verify/dev/types/**/*.ts"
+    ".next-verify/dev/types/**/*.ts",
+    ".next/refmods-check/types/**/*.ts",
+    ".next/refmods-check/dev/types/**/*.ts",
+    ".next-refmods-check/types/**/*.ts",
+    ".next-refmods-check/dev/types/**/*.ts",
+    ".next-refmods-build/types/**/*.ts",
+    ".next-refmods-build/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules",

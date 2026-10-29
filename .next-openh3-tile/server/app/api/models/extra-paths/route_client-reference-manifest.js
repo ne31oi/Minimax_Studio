@@ -1,0 +1,1 @@
+globalThis.__RSC_MANIFEST=(globalThis.__RSC_MANIFEST||{});globalThis.__RSC_MANIFEST["/api/models/extra-paths/route"]={"moduleLoading":{"prefix":"/_next/"},"ssrModuleMapping":{},"edgeSSRModuleMapping":{},"clientModules":{},"entryCSSFiles":{"F:\\Minimax_Studio\\src\\app\\api\\models\\extra-paths\\route":[]},"rscModuleMapping":{},"edgeRscModuleMapping":{}};

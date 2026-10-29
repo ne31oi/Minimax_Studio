@@ -1,0 +1,495 @@
+{
+  "version": 3,
+  "pages404": true,
+  "appType": "app",
+  "caseSensitive": false,
+  "basePath": "",
+  "redirects": [
+    {
+      "source": "/:path+/",
+      "destination": "/:path+",
+      "internal": true,
+      "priority": true,
+      "statusCode": 308,
+      "regex": "^(?:/((?:[^/]+?)(?:/(?:[^/]+?))*))/$"
+    }
+  ],
+  "headers": [],
+  "onMatchHeaders": [],
+  "rewrites": {
+    "beforeFiles": [],
+    "afterFiles": [],
+    "fallback": []
+  },
+  "dynamicRoutes": [],
+  "staticRoutes": [
+    {
+      "page": "/",
+      "regex": "^/(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/(?:/)?$"
+    },
+    {
+      "page": "/_global-error",
+      "regex": "^/_global\\-error(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/_global\\-error(?:/)?$"
+    },
+    {
+      "page": "/_not-found",
+      "regex": "^/_not\\-found(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/_not\\-found(?:/)?$"
+    },
+    {
+      "page": "/api/assistant/attachment",
+      "regex": "^/api/assistant/attachment(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/assistant/attachment(?:/)?$"
+    },
+    {
+      "page": "/api/assistant/chats",
+      "regex": "^/api/assistant/chats(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/assistant/chats(?:/)?$"
+    },
+    {
+      "page": "/api/comfy/active",
+      "regex": "^/api/comfy/active(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/comfy/active(?:/)?$"
+    },
+    {
+      "page": "/api/comfy/cancel",
+      "regex": "^/api/comfy/cancel(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/comfy/cancel(?:/)?$"
+    },
+    {
+      "page": "/api/comfy/clean",
+      "regex": "^/api/comfy/clean(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/comfy/clean(?:/)?$"
+    },
+    {
+      "page": "/api/comfy/concat",
+      "regex": "^/api/comfy/concat(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/comfy/concat(?:/)?$"
+    },
+    {
+      "page": "/api/comfy/controlnet",
+      "regex": "^/api/comfy/controlnet(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/comfy/controlnet(?:/)?$"
+    },
+    {
+      "page": "/api/comfy/delete",
+      "regex": "^/api/comfy/delete(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/comfy/delete(?:/)?$"
+    },
+    {
+      "page": "/api/comfy/diffusion-models",
+      "regex": "^/api/comfy/diffusion\\-models(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/comfy/diffusion\\-models(?:/)?$"
+    },
+    {
+      "page": "/api/comfy/face-refine",
+      "regex": "^/api/comfy/face\\-refine(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/comfy/face\\-refine(?:/)?$"
+    },
+    {
+      "page": "/api/comfy/file",
+      "regex": "^/api/comfy/file(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/comfy/file(?:/)?$"
+    },
+    {
+      "page": "/api/comfy/files",
+      "regex": "^/api/comfy/files(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/comfy/files(?:/)?$"
+    },
+    {
+      "page": "/api/comfy/folders",
+      "regex": "^/api/comfy/folders(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/comfy/folders(?:/)?$"
+    },
+    {
+      "page": "/api/comfy/fps",
+      "regex": "^/api/comfy/fps(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/comfy/fps(?:/)?$"
+    },
+    {
+      "page": "/api/comfy/free",
+      "regex": "^/api/comfy/free(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/comfy/free(?:/)?$"
+    },
+    {
+      "page": "/api/comfy/generate",
+      "regex": "^/api/comfy/generate(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/comfy/generate(?:/)?$"
+    },
+    {
+      "page": "/api/comfy/health",
+      "regex": "^/api/comfy/health(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/comfy/health(?:/)?$"
+    },
+    {
+      "page": "/api/comfy/inflight",
+      "regex": "^/api/comfy/inflight(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/comfy/inflight(?:/)?$"
+    },
+    {
+      "page": "/api/comfy/meta",
+      "regex": "^/api/comfy/meta(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/comfy/meta(?:/)?$"
+    },
+    {
+      "page": "/api/comfy/metadata",
+      "regex": "^/api/comfy/metadata(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/comfy/metadata(?:/)?$"
+    },
+    {
+      "page": "/api/comfy/model-options",
+      "regex": "^/api/comfy/model\\-options(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/comfy/model\\-options(?:/)?$"
+    },
+    {
+      "page": "/api/comfy/move",
+      "regex": "^/api/comfy/move(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/comfy/move(?:/)?$"
+    },
+    {
+      "page": "/api/comfy/preview",
+      "regex": "^/api/comfy/preview(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/comfy/preview(?:/)?$"
+    },
+    {
+      "page": "/api/comfy/progress",
+      "regex": "^/api/comfy/progress(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/comfy/progress(?:/)?$"
+    },
+    {
+      "page": "/api/comfy/purge-queue",
+      "regex": "^/api/comfy/purge\\-queue(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/comfy/purge\\-queue(?:/)?$"
+    },
+    {
+      "page": "/api/comfy/refine",
+      "regex": "^/api/comfy/refine(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/comfy/refine(?:/)?$"
+    },
+    {
+      "page": "/api/comfy/refine/stitch",
+      "regex": "^/api/comfy/refine/stitch(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/comfy/refine/stitch(?:/)?$"
+    },
+    {
+      "page": "/api/comfy/status",
+      "regex": "^/api/comfy/status(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/comfy/status(?:/)?$"
+    },
+    {
+      "page": "/api/comfy/system-stats",
+      "regex": "^/api/comfy/system\\-stats(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/comfy/system\\-stats(?:/)?$"
+    },
+    {
+      "page": "/api/comfy/tile-upscale",
+      "regex": "^/api/comfy/tile\\-upscale(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/comfy/tile\\-upscale(?:/)?$"
+    },
+    {
+      "page": "/api/comfy/trim",
+      "regex": "^/api/comfy/trim(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/comfy/trim(?:/)?$"
+    },
+    {
+      "page": "/api/comfy/upload",
+      "regex": "^/api/comfy/upload(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/comfy/upload(?:/)?$"
+    },
+    {
+      "page": "/api/config",
+      "regex": "^/api/config(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/config(?:/)?$"
+    },
+    {
+      "page": "/api/dialog/folder",
+      "regex": "^/api/dialog/folder(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/dialog/folder(?:/)?$"
+    },
+    {
+      "page": "/api/extend/import",
+      "regex": "^/api/extend/import(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/extend/import(?:/)?$"
+    },
+    {
+      "page": "/api/llm/abort",
+      "regex": "^/api/llm/abort(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/llm/abort(?:/)?$"
+    },
+    {
+      "page": "/api/llm/chat",
+      "regex": "^/api/llm/chat(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/llm/chat(?:/)?$"
+    },
+    {
+      "page": "/api/llm/release",
+      "regex": "^/api/llm/release(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/llm/release(?:/)?$"
+    },
+    {
+      "page": "/api/llm/status",
+      "regex": "^/api/llm/status(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/llm/status(?:/)?$"
+    },
+    {
+      "page": "/api/llm/stop",
+      "regex": "^/api/llm/stop(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/llm/stop(?:/)?$"
+    },
+    {
+      "page": "/api/loras",
+      "regex": "^/api/loras(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/loras(?:/)?$"
+    },
+    {
+      "page": "/api/loras/reset",
+      "regex": "^/api/loras/reset(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/loras/reset(?:/)?$"
+    },
+    {
+      "page": "/api/models/cancel",
+      "regex": "^/api/models/cancel(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/models/cancel(?:/)?$"
+    },
+    {
+      "page": "/api/models/delete",
+      "regex": "^/api/models/delete(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/models/delete(?:/)?$"
+    },
+    {
+      "page": "/api/models/download",
+      "regex": "^/api/models/download(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/models/download(?:/)?$"
+    },
+    {
+      "page": "/api/models/extra-paths",
+      "regex": "^/api/models/extra\\-paths(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/models/extra\\-paths(?:/)?$"
+    },
+    {
+      "page": "/api/models/migrate",
+      "regex": "^/api/models/migrate(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/models/migrate(?:/)?$"
+    },
+    {
+      "page": "/api/models/status",
+      "regex": "^/api/models/status(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/models/status(?:/)?$"
+    },
+    {
+      "page": "/api/refmods",
+      "regex": "^/api/refmods(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/refmods(?:/)?$"
+    },
+    {
+      "page": "/api/refmods/jobs",
+      "regex": "^/api/refmods/jobs(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/refmods/jobs(?:/)?$"
+    },
+    {
+      "page": "/api/refmods/projects",
+      "regex": "^/api/refmods/projects(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/refmods/projects(?:/)?$"
+    },
+    {
+      "page": "/api/reset/full",
+      "regex": "^/api/reset/full(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/reset/full(?:/)?$"
+    },
+    {
+      "page": "/api/setup-status",
+      "regex": "^/api/setup\\-status(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/setup\\-status(?:/)?$"
+    },
+    {
+      "page": "/api/stt/models/download",
+      "regex": "^/api/stt/models/download(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/stt/models/download(?:/)?$"
+    },
+    {
+      "page": "/api/stt/reload",
+      "regex": "^/api/stt/reload(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/stt/reload(?:/)?$"
+    },
+    {
+      "page": "/api/stt/status",
+      "regex": "^/api/stt/status(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/stt/status(?:/)?$"
+    },
+    {
+      "page": "/api/stt/stop",
+      "regex": "^/api/stt/stop(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/stt/stop(?:/)?$"
+    },
+    {
+      "page": "/api/stt/transcribe",
+      "regex": "^/api/stt/transcribe(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/stt/transcribe(?:/)?$"
+    },
+    {
+      "page": "/api/upscale/cancel",
+      "regex": "^/api/upscale/cancel(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/upscale/cancel(?:/)?$"
+    },
+    {
+      "page": "/api/upscale/file",
+      "regex": "^/api/upscale/file(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/upscale/file(?:/)?$"
+    },
+    {
+      "page": "/api/upscale/finalize",
+      "regex": "^/api/upscale/finalize(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/upscale/finalize(?:/)?$"
+    },
+    {
+      "page": "/api/upscale/import",
+      "regex": "^/api/upscale/import(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/upscale/import(?:/)?$"
+    },
+    {
+      "page": "/api/upscale/job",
+      "regex": "^/api/upscale/job(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/upscale/job(?:/)?$"
+    },
+    {
+      "page": "/api/upscale/place",
+      "regex": "^/api/upscale/place(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/upscale/place(?:/)?$"
+    },
+    {
+      "page": "/api/upscale/probe",
+      "regex": "^/api/upscale/probe(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/upscale/probe(?:/)?$"
+    },
+    {
+      "page": "/api/upscale/render",
+      "regex": "^/api/upscale/render(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/upscale/render(?:/)?$"
+    },
+    {
+      "page": "/api/upscale/schema",
+      "regex": "^/api/upscale/schema(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/upscale/schema(?:/)?$"
+    },
+    {
+      "page": "/api/upscale/start",
+      "regex": "^/api/upscale/start(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/upscale/start(?:/)?$"
+    },
+    {
+      "page": "/api/upscale/status",
+      "regex": "^/api/upscale/status(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/upscale/status(?:/)?$"
+    },
+    {
+      "page": "/api/upscale/stop",
+      "regex": "^/api/upscale/stop(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/upscale/stop(?:/)?$"
+    },
+    {
+      "page": "/api/upscale/upload",
+      "regex": "^/api/upscale/upload(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/upscale/upload(?:/)?$"
+    },
+    {
+      "page": "/splash",
+      "regex": "^/splash(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/splash(?:/)?$"
+    }
+  ],
+  "dataRoutes": [],
+  "rsc": {
+    "header": "rsc",
+    "varyHeader": "rsc, next-router-state-tree, next-router-prefetch, next-router-segment-prefetch",
+    "prefetchHeader": "next-router-prefetch",
+    "didPostponeHeader": "x-nextjs-postponed",
+    "contentTypeHeader": "text/x-component",
+    "suffix": ".rsc",
+    "prefetchSegmentHeader": "next-router-segment-prefetch",
+    "prefetchSegmentSuffix": ".segment.rsc",
+    "prefetchSegmentDirSuffix": ".segments",
+    "clientParamParsing": false,
+    "dynamicRSCPrerender": false
+  },
+  "rewriteHeaders": {
+    "pathHeader": "x-nextjs-rewritten-path",
+    "queryHeader": "x-nextjs-rewritten-query"
+  }
+}

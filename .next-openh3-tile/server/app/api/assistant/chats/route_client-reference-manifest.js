@@ -1,0 +1,1 @@
+globalThis.__RSC_MANIFEST=(globalThis.__RSC_MANIFEST||{});globalThis.__RSC_MANIFEST["/api/assistant/chats/route"]={"moduleLoading":{"prefix":"/_next/"},"ssrModuleMapping":{},"edgeSSRModuleMapping":{},"clientModules":{},"entryCSSFiles":{"F:\\Minimax_Studio\\src\\app\\api\\assistant\\chats\\route":[]},"rscModuleMapping":{},"edgeRscModuleMapping":{}};

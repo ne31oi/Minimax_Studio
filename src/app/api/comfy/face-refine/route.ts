@@ -1,8 +1,10 @@
+import { resolveRefModSet } from '@/lib/refmods/resolve'
+import { attachRefMods } from '@/lib/refmods/workflow'
 import { NextRequest, NextResponse } from 'next/server'
 import { promises as fs } from 'fs'
 import { existsSync } from 'fs'
 import path from 'path'
-import { submitWorkflowJson } from '@/lib/comfy/minimax-h3-client'
+import { submitWorkflowJson as baseSubmitWorkflowJson } from '@/lib/comfy/minimax-h3-client'
 import { setActivePrompt } from '@/lib/comfy/progress-tracker'
 import { getAppConfig } from '@/lib/app-config'
 import { sanitizeFolderPath } from '@/lib/gallery-folders'
@@ -16,7 +18,7 @@ import {
   type FaceSelectMode,
   type FaceUndetected,
 } from '@/lib/comfy/face-refine-template'
-import { recordPendingMetaRaw } from '@/lib/pending-meta'
+import { recordPendingMetaRaw as baseRecordPendingMetaRaw } from '@/lib/pending-meta'
 import { readMetaImageRefs, readPromptChain } from '@/lib/refine-meta'
 import { probeVideoFile } from '@/lib/video-probe'
 import { getVideoFormatSettings } from '@/lib/video-format-server'
@@ -120,6 +122,11 @@ export async function POST(req: NextRequest) {
       /** (правка 723) Клик по лицу в превью: пиксели кадра + его номер. */
       facePoint?: { x?: number; y?: number; frame?: number }
     }
+    const resolvedRefMods = await resolveRefModSet((body as { refMods?: unknown }).refMods, "face-refine")
+    const refModSnapshot = { items: resolvedRefMods.items, frameCurve: resolvedRefMods.frameCurve, stepCurve: resolvedRefMods.stepCurve, maxTokens: resolvedRefMods.maxTokens, retention: resolvedRefMods.retention, versions: resolvedRefMods.versions }
+    const submitWorkflowJson = (graph: Record<string, unknown>, stages?: string[][], geometry?: Parameters<typeof baseSubmitWorkflowJson>[2]) => baseSubmitWorkflowJson(attachRefMods(graph, resolvedRefMods), stages, geometry)
+    const recordPendingMetaRaw = (id: string, params: Parameters<typeof baseRecordPendingMetaRaw>[1]) => baseRecordPendingMetaRaw(id, { ...params, refMods: refModSnapshot })
+
 
     if (!body?.sourceFilename && !body?.inputSource) {
       return NextResponse.json({ error: 'sourceFilename (или inputSource) обязателен' }, { status: 400 })

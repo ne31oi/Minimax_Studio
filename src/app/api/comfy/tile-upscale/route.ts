@@ -1,14 +1,17 @@
+import { resolveRefModSet } from '@/lib/refmods/resolve'
+import { attachRefMods } from '@/lib/refmods/workflow'
 import { NextRequest, NextResponse } from 'next/server'
 import { promises as fs } from 'fs'
-import { existsSync } from 'fs'
+import { existsSync, statSync } from 'fs'
 import path from 'path'
-import { submitWorkflowJson } from '@/lib/comfy/minimax-h3-client'
+import { submitWorkflowJson as baseSubmitWorkflowJson } from '@/lib/comfy/minimax-h3-client'
 import { setActivePrompt } from '@/lib/comfy/progress-tracker'
 import { getAppConfig } from '@/lib/app-config'
 import { sanitizeFolderPath } from '@/lib/gallery-folders' // (правка 495)
 import { runGeneration, assertGenerationAllowed } from '@/lib/vram-arbiter'
 import { buildTileUpscaleWorkflow, computeTileGeometry, DEFAULT_TILE_UPSCALE_PROMPT } from '@/lib/comfy/tile-upscale-template'
-import { recordPendingMetaRaw } from '@/lib/pending-meta'
+import { OPEN_H3_SIGMAS } from '@/lib/comfy/refine-sigmas'
+import { recordPendingMetaRaw as baseRecordPendingMetaRaw } from '@/lib/pending-meta'
 import { readPromptChain, readMetaImageRefs, resolveSourceLatent } from '@/lib/refine-meta'
 import { probeVideoFile } from '@/lib/video-probe'
 import { getVideoFormatSettings } from '@/lib/video-format-server' // (правка 386)
@@ -54,7 +57,13 @@ export async function POST(req: NextRequest) {
       denoise?: number
       steps?: number
       syncTiles?: boolean
+      profile?: 'standard' | 'open-h3'
     }
+    const resolvedRefMods = await resolveRefModSet((body as { refMods?: unknown }).refMods, "tile-upscale")
+    const refModSnapshot = { items: resolvedRefMods.items, frameCurve: resolvedRefMods.frameCurve, stepCurve: resolvedRefMods.stepCurve, maxTokens: resolvedRefMods.maxTokens, retention: resolvedRefMods.retention, versions: resolvedRefMods.versions }
+    const submitWorkflowJson = (graph: Record<string, unknown>, stages?: string[][], geometry?: Parameters<typeof baseSubmitWorkflowJson>[2]) => baseSubmitWorkflowJson(attachRefMods(graph, resolvedRefMods), stages, geometry)
+    const recordPendingMetaRaw = (id: string, params: Parameters<typeof baseRecordPendingMetaRaw>[1]) => baseRecordPendingMetaRaw(id, { ...params, refMods: refModSnapshot })
+
 
     if (!body?.sourceFilename && !body?.inputSource) {
       return NextResponse.json({ error: 'sourceFilename (или inputSource) обязателен' }, { status: 400 })
@@ -66,14 +75,37 @@ export async function POST(req: NextRequest) {
     }
 
     const cfg = getAppConfig()
+    const openH3 = body.profile === 'open-h3'
+    const openH3Base = 'minimax_h3_fl2va_pruned_int8_convrot.safetensors'
+    const openH3Loras = [
+      ['minimax_h3_open_regenerate_2k_refiner_rank_384_bf16.safetensors', 5868409512],
+      ['minimax_h3_fl2v_turbo_4step_v1.2_768p_comfyui_bf16.safetensors', 1956193000],
+      ['minimax_h3_lms_v1.0_r64.safetensors', 1239664536],
+    ] as const
+    if (openH3) {
+      const roots = [path.join(cfg.comfyRoot, 'ComfyUI', 'models', 'loras'),
+        ...cfg.modelExtraPaths.filter((p) => p.category === 'loras').map((p) => p.path)]
+      const hasSize = (filename: string, size: number) => {
+        try { return statSync(filename).size === size } catch { return false }
+      }
+      for (const [name, size] of openH3Loras) {
+        if (!roots.some((root) => hasSize(path.join(root, name), size))) {
+          return NextResponse.json({ error: `Для Open H3 отсутствует или не полностью скачана LoRA: ${name}. Откройте Настройки → Модели.` }, { status: 400 })
+        }
+      }
+      if (!hasSize(path.join(cfg.comfyRoot, 'ComfyUI', 'models', 'diffusion_models', openH3Base), 20970379616)) {
+        return NextResponse.json({ error: `Для Open H3 отсутствует или не полностью скачана модель ${openH3Base}. Откройте Настройки → Модели.` }, { status: 400 })
+      }
+      body.steps = 3
+    }
 
     // (правка 483) LoRA из настроек — как в /api/comfy/generate: модель
     // получает их цепочкой customLoras (турбо-лора — обычная запись, ON по
     // умолчанию), триггерные слова дописываются в conditioning-промпт.
     // В мету промпт пишется БЕЗ триггеров — «Повторить» добавит их заново по актуальному
     // списку, иначе бы они накапливались (правка 89).
-    const customLoraEntries = enabledCustomLoras()
-    const customLoras = customLoraEntries.length > 0
+    const customLoraEntries = openH3 ? [] : enabledCustomLoras()
+    const customLoras = openH3 ? openH3Loras.map(([name]) => ({ name, strength: 1 })) : customLoraEntries.length > 0
       ? customLoraEntries.map((e) => ({ name: e.name, strength: e.strength }))
       : undefined
     const loraSuffix = loraTriggerSuffix(customLoraEntries)
@@ -97,6 +129,7 @@ export async function POST(req: NextRequest) {
     // собран. Значения — дефолты из tile-upscale-template.ts.
     const tileCommonMeta = {
       pipeline: 'full',
+      tile_profile: openH3 ? 'open-h3' : 'standard',
       tile_size: body.tileSize ?? 768,
       tile_overlap: body.overlap ?? 128,
       tile_fade: body.fade ?? 64,
@@ -104,7 +137,7 @@ export async function POST(req: NextRequest) {
       temporal_overlap: body.temporalOverlap ?? 17,
       anchor_strength: body.anchorStrength ?? 0.999,
       target_resolution: body.targetResolution ?? 1080,
-      denoise: body.denoise ?? 0.1,
+      ...(openH3 ? { sigmas: OPEN_H3_SIGMAS } : { denoise: body.denoise ?? 0.1 }),
       // pass1_steps — единый контракт для строки «Шаги» MetaDialog (как у
       // refine/face-refine). Поле steps оставлено: его пишут старые сайдкары.
       pass1_steps: body.steps ?? 2,
@@ -147,7 +180,8 @@ export async function POST(req: NextRequest) {
         submitWorkflowJson(
           buildTileUpscaleWorkflow({
             sourceVideo: inName,
-            diffusionModel: cfg.diffusionModel || undefined,
+            diffusionModel: openH3 ? openH3Base : cfg.diffusionModel || undefined,
+            openH3,
             sourceAudioPath: inPath, // (правка 488) аудио для latent-ветки
             sourceWidth: probe.width,
             sourceHeight: probe.height,
@@ -290,7 +324,8 @@ export async function POST(req: NextRequest) {
       submitWorkflowJson(
         buildTileUpscaleWorkflow({
           sourceVideo: destName,
-          diffusionModel: cfg.diffusionModel || undefined,
+          diffusionModel: openH3 ? openH3Base : cfg.diffusionModel || undefined,
+          openH3,
           sourceAudioPath: destPath, // (правка 488) аудио для latent-ветки
           videoFormat: getVideoFormatSettings(), // (правка 386)
           // (правка 381) lossless-ветка: размеры = канва латента, mp4 грузится

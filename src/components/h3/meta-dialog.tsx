@@ -1,4 +1,5 @@
 'use client'
+import { RefModMetadata } from './refmods-metadata'
 
 /**
  * MetaDialog — modal that displays WanGP generation metadata.
@@ -533,6 +534,7 @@ export function MetaDialog({ filePath, filename, onClose }: MetaDialogProps) {
               )}
 
               {/* References */}
+              <RefModMetadata value={params?.refMods} maps={params?.refmod_reference_maps} rawTokens={params?.refmod_raw_reference_tokens}/>
               {references.length > 0 && (
                 <div className="space-y-1.5">
                   <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">

@@ -17,6 +17,8 @@ import { persist } from 'zustand/middleware'
  * `path` is the ComfyUI input/ filename returned by /api/comfy/upload.
  */
 export interface VideoRefItem {
+  /** Probe result; avoids assigning an Audio label to a silent reference video. */
+  hasAudio?: boolean
   id: string
   kind: 'image' | 'video' | 'audio'
   /** ComfyUI input/ filename. */

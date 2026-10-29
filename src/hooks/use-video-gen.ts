@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef } from 'react'
+import { selectedRefMods } from '@/lib/refmods/store'
 import { toast } from 'sonner'
 import type { VideoGenerateParams } from '@/lib/comfy/video-config'
 import { useGenProgress, type GenPhase } from '@/lib/gen-progress-store'
@@ -918,6 +919,7 @@ export function useVideoGen() {
    */
   const generate = useCallback(
     async (params: VideoGenerateParams) => {
+      params = { ...params, refMods: params.refMods ?? selectedRefMods(params.mode === 'extend' ? 'extend' : 'generate') }
       const queueId = queue.enqueue('video', params.prompt?.slice(0, 50) || 'Видео')
 
       // (правка 331) clientToken для inflight-восстановления: если страницу
@@ -1189,7 +1191,7 @@ export function useVideoGen() {
         const res = await fetch('/api/comfy/generate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
+          body: JSON.stringify({ ...body, refMods: params.refMods, refModComparison: params.refModComparison }),
           signal: AbortSignal.timeout(120_000),
         })
 

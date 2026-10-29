@@ -1,0 +1,1 @@
+globalThis.__RSC_MANIFEST=(globalThis.__RSC_MANIFEST||{});globalThis.__RSC_MANIFEST["/api/comfy/meta/route"]={"moduleLoading":{"prefix":"/_next/"},"ssrModuleMapping":{},"edgeSSRModuleMapping":{},"clientModules":{},"entryCSSFiles":{"F:\\Minimax_Studio\\src\\app\\api\\comfy\\meta\\route":[]},"rscModuleMapping":{},"edgeRscModuleMapping":{}};

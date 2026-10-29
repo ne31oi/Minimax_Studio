@@ -30,7 +30,7 @@ import {
 
 // (правка 442) Вкладки «Ассистент» больше нет: ассистент — правая панель
 // на вкладках «Генерация» и «Продление».
-export type TabType = 'generate' | 'extend' | 'refine' | 'upscale' | 'tile-upscale' | 'controlnet' | 'fps' | 'face-refine' | 'gallery' | 'learn'
+export type TabType = 'generate' | 'extend' | 'refine' | 'upscale' | 'tile-upscale' | 'controlnet' | 'fps' | 'face-refine' | 'gallery' | 'learn' | 'refmods'
 
 interface SidebarProps {
   activeTab: TabType
@@ -40,6 +40,7 @@ interface SidebarProps {
 }
 
 const navItems = [
+  { id: 'refmods' as TabType, label: 'RefMods', icon: Grid3x3Icon, color: '#FBBF24' },
   { id: 'generate' as TabType, label: 'Генерация', icon: ClapperboardIcon, color: '#06B6D4' },
   { id: 'extend' as TabType, label: 'Продление', icon: FilmIcon, color: '#06B6D4' },
   { id: 'refine' as TabType, label: 'Refine', icon: Wand2Icon, color: '#10B981' },

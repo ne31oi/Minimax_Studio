@@ -28,6 +28,8 @@ export interface VideoReferenceParam {
  * Parameters from the UI — the hook maps them to the ComfyUI workflow.
  */
 export interface VideoGenerateParams {
+  refModComparison?: { id: string; variant: 'baseline' | 'refmods' }
+  refMods?: import('../refmods/types').RefModSet
   /** Model type (kept for UI compatibility; ComfyUI uses the workflow template). */
   modelType: string
   /** (правка 146) Режим генерации: 'ref' (default) | 't2v' | 'flf' | 'extend' (правка 161). */

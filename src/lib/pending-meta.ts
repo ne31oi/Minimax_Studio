@@ -429,7 +429,7 @@ export function recordPendingMeta(promptId: string, body: MiniMaxH3Params) {
     // (finalizePendingMeta) собирает params из entry.params и метка времени
     // терялась → защита от удаления чужих сиблингов не работала.
     map[promptId] = {
-      params: { ...bodyToMetaParams(body), job_id: promptId, started_at: startedAt },
+      params: { ...bodyToMetaParams(body), ...(body.refMods ? { refMods: body.refMods } : {}), ...(body.refModComparison ? {refModComparison:body.refModComparison} : {}), job_id: promptId, started_at: startedAt },
       started_at: startedAt,
     }
     savePending(map)
@@ -494,8 +494,26 @@ export async function finalizePendingMeta(
     const map = loadPending()
     const entry = map[promptId]
     if (!entry) return null
-    delete map[promptId]
-    savePending(map)
+    if ((entry.params.refMods as {items?: unknown[]}|undefined)?.items?.length) {
+      try {
+        const history = await fetch(`${process.env.COMFY_URL || 'http://127.0.0.1:8188'}/history/${encodeURIComponent(promptId)}`, {signal:AbortSignal.timeout(8000)}).then(r=>r.json())
+        const referenceMaps:Record<string,unknown>={}
+        const rawTokens:Record<string,unknown>={}
+        for(const [node,output] of Object.entries(history[promptId]?.outputs||{})) {
+          const data=output as {studio_refmod_map?:unknown;studio_raw_reference_tokens?:unknown}
+          if(data.studio_refmod_map) referenceMaps[node]=data.studio_refmod_map
+          if(data.studio_raw_reference_tokens) rawTokens[node]=data.studio_raw_reference_tokens
+        }
+        entry.params.refmod_reference_maps=referenceMaps
+        entry.params.refmod_raw_reference_tokens=rawTokens
+      } catch { /* saved selection remains available if the backend restarted */ }
+    }
+    // History lookup above yields: another task may have registered metadata
+    // meanwhile, or another poller may have finalized this prompt already.
+    const remaining = loadPending()
+    if (!remaining[promptId]) return null
+    delete remaining[promptId]
+    savePending(remaining)
 
     const primary =
       outputs.find((o) => o.filename?.match(/\.(mp4|webm|mov|m4v)$/i) && !/Minimax_Studio_cnref/i.test(o.filename ?? '')) || outputs[0]

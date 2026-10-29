@@ -16,7 +16,7 @@
  *   - Картинки-рефы (до 9) — для сохранения персонажей/сцены
  *   - Опционально: исходное видео
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import {
   Maximize2Icon,
@@ -46,6 +46,9 @@ import { SeedBlock } from './video-shared'
 import { GenerationStatus } from './generation-status'
 import { VideoGalleryGrid, H3_VIDEO_DND_MIME } from './video-gallery-grid'
 import { MentionTextarea, type MentionItem } from './mention-textarea'
+import { useRefModMentions } from '@/hooks/use-refmod-mentions'
+import { remapReferenceTags, type ReferenceLabel } from '@/lib/refmods/types'
+import { referenceRestoreState } from '@/lib/refmods/remapping'
 import { useVideoGallery } from './use-video-gallery'
 import { isStreamActive } from '@/lib/assistant-stream'
 import { useExtendTarget } from '@/lib/extend-target-store' // (правка 370) цель «Продлить» из галереи
@@ -231,20 +234,22 @@ export function ExtendView() {
 
   // (правка 289) Mention items для тэгов <Picture N> в промптах клипов.
   // Аналогично generate-view: нумерация по порядку добавленных рефов.
-  const clipMentions: MentionItem[] = useMemo(() => {
-    return extendRefs.map((ref, i) => ({
-      id: ref.id,
-      label: ref.name,
-      trigger: `<Picture ${i + 1}>`,
-      kind: 'image',
-      color: 'bg-purple-500/15 text-purple-400',
-      previewUrl:
-        ref.previewUrl ||
-        (ref.path
-          ? `/api/comfy/file?filename=${encodeURIComponent(ref.path)}&type=input`
-          : undefined),
-    }))
-  }, [extendRefs])
+  const clipMentions: MentionItem[] = useRefModMentions('extend', extendRefs.map(r => ({...r, kind:'image' as const})))
+  const previousRefModMentions = useRef<ReferenceLabel[] | null>(null)
+  const previousRestoreEpoch = useRef(referenceRestoreState().epoch)
+  const mentionKey = JSON.stringify(clipMentions)
+  useEffect(() => {
+    const labels = clipMentions as ReferenceLabel[]
+    const before = previousRefModMentions.current
+    const restore = referenceRestoreState()
+    if (before && !restore.restoring && previousRestoreEpoch.current === restore.epoch) {
+      const state = useGenStore.getState().video
+      const clips = state.extendClips.map(c => ({...c, prompt:remapReferenceTags(c.prompt, before, labels)}))
+      if (clips.some((c, i) => c.prompt !== state.extendClips[i].prompt)) patchVideo({extendClips:clips})
+    }
+    previousRefModMentions.current = labels
+    previousRestoreEpoch.current = restore.epoch
+  }, [mentionKey, patchVideo])
 
   /* ──────────── Upload handlers ──────────── */
 

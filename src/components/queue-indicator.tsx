@@ -30,6 +30,8 @@ import { cn } from '@/lib/utils'
 /* ──────────────────── Icon Map ──────────────────── */
 
 const TYPE_ICON: Record<QueueItemType, typeof ImageIcon> = {
+  'refmod-build': Grid3x3Icon,
+  'refmod-preview': ImageIcon,
   image: ImageIcon,
   music: MusicIcon,
   sound: Volume2Icon,
@@ -220,7 +222,7 @@ function useGlobalQueuePoller() {
               // refinepart_* и без bump галереи. Финализация refine — в
               // refine-queue (раннер в живой сессии, recoverOrphanRefineItem
               // после перезагрузки).
-              if (item.type === 'refine') return
+              if (item.type === 'refine' || item.type === 'refmod-build' || item.type === 'refmod-preview') return
               // (фикс) Только если элемент ещё не имеет статус 'done'
               // (use-video-gen уже обработал 'done' и запустил таймер удаления)
               const fresh = useGenQueue.getState().items.find((it) => it.id === item.id)
@@ -261,6 +263,11 @@ function useGlobalQueuePoller() {
 /* ──────────────────── Cancel handler ──────────────────── */
 
 async function cancelQueueItem(item: { id: string; promptId: string | null; type: QueueItemType }) {
+  if (item.type === 'refmod-build' || item.type === 'refmod-preview') {
+    const { cancelRefModQueueItem } = await import('@/lib/refmods/client-jobs')
+    await cancelRefModQueueItem(item.id)
+    return
+  }
   const { setStatus, remove } = useGenQueue.getState()
   // (правка 329) upscale: у очереди нет promptId, ветка !promptId просто
   // удаляла элемент, а серверный DLSS-рендер продолжал работать зомби.

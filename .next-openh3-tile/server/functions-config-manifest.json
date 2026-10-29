@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "functions": {
+    "/api/extend/import": {
+      "maxDuration": 600
+    },
+    "/api/refmods": {},
+    "/api/refmods/jobs": {},
+    "/api/refmods/projects": {},
+    "/api/stt/transcribe": {
+      "maxDuration": 300
+    },
+    "/api/upscale/import": {
+      "maxDuration": 600
+    },
+    "/api/upscale/probe": {
+      "maxDuration": 120
+    },
+    "/api/upscale/render": {
+      "maxDuration": 300
+    },
+    "/api/upscale/start": {
+      "maxDuration": 240
+    },
+    "/api/upscale/upload": {
+      "maxDuration": 600
+    }
+  }
+}

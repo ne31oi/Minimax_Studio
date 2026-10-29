@@ -5,6 +5,8 @@
 /.next/
 /.next-before-openh3/
 /.next-openh3/
+/.next-refmods-check/
+/.next-refmods-build/
 /out/
 
 # production
@@ -82,6 +84,8 @@ dlssg-worker.exe
 /data/upscale-output/
 /data/chat-attachments/
 /data/assistant-ref-cache/
+/data/refmods/
+/data/refmods-*.png
 
 # пользовательское состояние (история чатов, незавершённые генерации, настройки LoRA)
 /data/assistant-chats.json

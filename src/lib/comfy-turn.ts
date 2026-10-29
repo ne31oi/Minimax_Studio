@@ -26,6 +26,8 @@ import {
 
 /** Режимы, которые исполняет ComfyUI и которые обязаны идти строго по одному. */
 export const COMFY_GATED_TYPES: ReadonlySet<QueueItemType> = new Set<QueueItemType>([
+  'refmod-build',
+  'refmod-preview',
   'video',
   'refine',
   'controlnet',

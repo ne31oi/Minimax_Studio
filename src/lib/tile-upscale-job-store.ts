@@ -25,7 +25,10 @@ import { acquireComfyTurn, isComfyTurnActive } from '@/lib/comfy-turn'
 
 export type TileUpscalePhase = 'idle' | 'submitting' | 'running' | 'done' | 'error'
 
+import { selectedRefMods } from './refmods/store'
+
 export interface TileUpscaleSubmitBody {
+  refMods?: import('./refmods/types').RefModSet
   inputSource?: string
   sourceFilename?: string
   sourceSubfolder?: string
@@ -84,6 +87,7 @@ export const useTileUpscaleJob = create<TileUpscaleJobState>()(
       busy: false,
 
       submit: async (body) => {
+        body = { ...body, refMods: body.refMods ?? selectedRefMods('tile-upscale') }
         const label = typeof body.sourceFilename === 'string' && body.sourceFilename
           ? `Tile: ${body.sourceFilename}`
           : 'Tile Upscale'

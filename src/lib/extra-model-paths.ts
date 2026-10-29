@@ -23,6 +23,7 @@ import { getAppConfig } from './app-config'
 
 /** Категории, которые имеет смысл подключать извне (folder_paths форка). */
 export const EXTRA_CATEGORIES: Array<{ key: string; label: string; exts: string[] }> = [
+  { key: 'refmods', label: 'RefMods', exts: ['.safetensors'] },
   { key: 'diffusion_models', label: 'Модели видео (diffusion/unet)', exts: ['.safetensors', '.ckpt', '.pt', '.bin', '.gguf'] },
   { key: 'loras', label: 'LoRA', exts: ['.safetensors', '.ckpt', '.pt'] }, // (правка 587) '.pt' без точки ловил любые имена на «pt»
   { key: 'vae', label: 'VAE', exts: ['.safetensors', '.ckpt', '.pt', '.bin'] },
@@ -35,6 +36,7 @@ export const EXTRA_CATEGORIES: Array<{ key: string; label: string; exts: string[
 
 /** Подпапки корня, означающие категорию (алиасы имён ComfyUI). */
 const CATEGORY_ALIASES: Record<string, string> = {
+  refmods: 'refmods',
   diffusion_models: 'diffusion_models',
   unet: 'diffusion_models',
   loras: 'loras',

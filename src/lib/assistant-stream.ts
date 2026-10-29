@@ -24,6 +24,7 @@ import { create } from 'zustand'
 import { toast } from 'sonner'
 import { useAssistantChats, type AssistantChatMessage, type AssistantChatMode } from './assistant-chats-store'
 import { useGenStore } from './gen-store'
+import { refModAssistantContext } from './refmods/assistant-context'
 import { useControlNetTarget } from './controlnet-target-store' // (правка 502)
 import { H3_SPEC_A, H3_SPEC_B, H3_SPEC_EXTEND } from './h3-prompt-spec'
 
@@ -913,7 +914,7 @@ export function runAssistantCompletion(
             // (кнопка «Улучшить мой промпт» делает это автоматически).
             // (правка 427) Для extend-чата — системный промпт продления
             // (клипы, extend-рефы, мета исходника); await: дочитывает мету.
-            { role: 'system', content: await buildSystemMessage(videoVisionOn, chatMode, ac.signal) },
+            { role: 'system', content: await buildSystemMessage(videoVisionOn, chatMode, ac.signal) + refModAssistantContext(chatMode) },
             // Replay the (capped) chat history so the model "remembers"
             ...apiHistory,
           ],

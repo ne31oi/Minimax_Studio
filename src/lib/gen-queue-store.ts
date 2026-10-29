@@ -21,6 +21,8 @@ import { persist } from 'zustand/middleware'
 /* ──────────────────── Types ──────────────────── */
 
 export type QueueItemType =
+  | 'refmod-build'
+  | 'refmod-preview'
   | 'image'
   | 'music'
   | 'sound'
@@ -57,6 +59,8 @@ export interface QueueItem {
 /* ──────────────────── Accent colors ──────────────────── */
 
 export const TYPE_ACCENT: Record<QueueItemType, string> = {
+  'refmod-build': '#FBBF24',
+  'refmod-preview': '#FBBF24',
   image: '#8B5CF6',
   music: '#10B981',
   sound: '#14B8A6',
@@ -70,6 +74,8 @@ export const TYPE_ACCENT: Record<QueueItemType, string> = {
 }
 
 export const TYPE_LABEL: Record<QueueItemType, string> = {
+  'refmod-build': 'Сборка RefMod',
+  'refmod-preview': 'Просмотр RefMod',
   image: 'Изображение',
   music: 'Музыка',
   sound: 'Звук',

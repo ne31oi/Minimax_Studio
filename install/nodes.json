@@ -20,5 +20,6 @@
   { "name": "rgthree-comfy", "repo": "rgthree/rgthree-comfy", "sha": "13b4399c00b5ef5a97b1b6800fc1185874740f5d" },
   { "name": "seedvr2_videoupscaler", "repo": "numz/ComfyUI-SeedVR2_VideoUpscaler", "sha": "4490bd1f482e026674543386bb2a4d176da245b9" },
   { "name": "veda-sparse-attention", "repo": "veda-sparse/Veda-on-ComfyUI", "sha": "60bfae688897dc41bc8685ca9f3130d7ed8f3b0c" },
-  { "name": "comfyui-workflow-encrypt", "repo": "jtydhr88/ComfyUI-Workflow-Encrypt", "sha": "5ec45fdac73d8bd6d732af76bbe81c94413b3e36" }
+  { "name": "comfyui-workflow-encrypt", "repo": "jtydhr88/ComfyUI-Workflow-Encrypt", "sha": "5ec45fdac73d8bd6d732af76bbe81c94413b3e36" },
+  { "name": "ComfyUI-MiniMaxH3Mod", "repo": "Luisacaotica/ComfyUI-MiniMaxH3Mod", "sha": "517e8c419a8584fbf69fceb487bc39d83e6a6ec8" }
 ]

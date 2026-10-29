@@ -17,7 +17,10 @@ import { acquireComfyTurn, isComfyTurnActive } from '@/lib/comfy-turn'
 
 export type FaceRefinePhase = 'idle' | 'submitting' | 'running' | 'done' | 'error'
 
+import { selectedRefMods } from './refmods/store'
+
 export interface FaceRefineSubmitBody {
+  refMods?: import('./refmods/types').RefModSet
   inputSource?: string
   sourceFilename?: string
   sourceSubfolder?: string
@@ -71,6 +74,7 @@ export const useFaceRefineJob = create<FaceRefineJobState>()(
       busy: false,
 
       submit: async (body) => {
+        body = { ...body, refMods: body.refMods ?? selectedRefMods('face-refine') }
         const label = typeof body.sourceFilename === 'string' && body.sourceFilename
           ? `Face: ${body.sourceFilename}`
           : 'Face Refine'

@@ -19,7 +19,10 @@ import { acquireComfyTurn, isComfyTurnActive } from '@/lib/comfy-turn'
 
 export type ControlNetPhase = 'idle' | 'submitting' | 'running' | 'done' | 'error'
 
+import { selectedRefMods } from './refmods/store'
+
 export interface ControlNetSubmitBody {
+  refMods?: import('./refmods/types').RefModSet
   inputSource?: string
   sourceFilename?: string
   sourceSubfolder?: string
@@ -81,6 +84,7 @@ export const useControlNetJob = create<ControlNetJobState>()(
       busy: false,
 
       submit: async (body) => {
+        body = { ...body, refMods: body.refMods ?? selectedRefMods('controlnet') }
         // (правка 512) Очередь: нет блокировки на busy — можно добавлять
         // несколько задач. Store отслеживает ПОСЛЕДНЮЮ отправленную задачу
         // (для статуса в UI), а gen-queue-store — все.

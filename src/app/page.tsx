@@ -32,8 +32,13 @@ import { sweepOrphanRefineItems } from '@/lib/refine-queue'
 // (правка 442) Ассистент — не вкладка, а правая панель на «Генерации» и
 // «Продлении»; событие «открыть ассистента» разворачивает панель через стор.
 import { useAssistantPanel } from '@/lib/assistant-panel-store'
+import { RefModsView } from '@/components/h3/refmods-view'
+import { RefModsPanel } from '@/components/h3/refmods-panel'
+import { REF_MOD_TARGETS, type RefModTarget } from '@/lib/refmods/types'
+import { resumeRefModJobs } from '@/lib/refmods/client-jobs'
 
 const TAB_CONTENT = {
+  refmods: RefModsView,
   generate: GenerateView,
   extend: ExtendView,
   refine: RefineView,
@@ -89,6 +94,8 @@ export default function Home() {
     const gotoControlNet = () => setActiveTab('controlnet') // (правка 497)
     const gotoFps = () => setActiveTab('fps')
     const gotoFaceRefine = () => setActiveTab('face-refine')
+    const gotoRefMods = () => setActiveTab('refmods')
+    window.addEventListener('h3:goto-refmods', gotoRefMods)
     // (правка 442) «Открыть ассистента»: вкладки «Ассистент» больше нет —
     // переключаемся на вкладку нужного режима (generate/extend) и разворачиваем
     // правую панель. Стор модульный: панель примонтируется уже развёрнутой.
@@ -108,6 +115,7 @@ export default function Home() {
     window.addEventListener('h3:goto-face-refine', gotoFaceRefine)
     window.addEventListener('h3:open-assistant-panel', openAssistantPanel)
     return () => {
+      window.removeEventListener('h3:goto-refmods', gotoRefMods)
       window.removeEventListener('h3:goto-generate', gotoGenerate)
       window.removeEventListener('h3:goto-extend', gotoExtend)
       window.removeEventListener('h3:goto-refine', gotoRefine)
@@ -139,6 +147,7 @@ export default function Home() {
     // и шлюз держал бы ход до watchdog.
     sweepOrphanRefineItems()
     initComfyTurn()
+    resumeRefModJobs()
     void reconcileGenerationOnStartup()
     return () => cancelReconcile()
   }, [])
@@ -158,6 +167,7 @@ export default function Home() {
       <main className="flex-1 min-w-0 relative flex flex-col">
         {/* Models not downloaded warning */}
         <ModelsWarningBanner onOpenSettings={() => setSettingsOpen(true)} />
+        {REF_MOD_TARGETS.includes(activeTab as RefModTarget) && <RefModsPanel target={activeTab as RefModTarget} />}
 
         <div className="flex-1 min-h-0 relative">
         <AnimatePresence mode="wait">

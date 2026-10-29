@@ -8,6 +8,9 @@
  * Right panel: prompt card with the CTA button and the results gallery.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useRefModMentions } from '@/hooks/use-refmod-mentions'
+import { selectedRefMods } from '@/lib/refmods/store'
+import { emptyRefModSet, refModTokens } from '@/lib/refmods/types'
 import { createPortal } from 'react-dom'
 import { motion } from 'framer-motion'
 import {
@@ -171,18 +174,10 @@ function AudioRefsBlock({
 }
 
 /** Тег референса в промпте: <Picture N> / <Video N> / <Audio N>. */
-function refTag(kind: VideoRefItem['kind'], n: number): string {
-  const tag = kind === 'image' ? 'Picture' : kind === 'video' ? 'Video' : 'Audio'
-  return `<${tag} ${n}>`
-}
+
 
 /** refId → текущий тег, нумерация по типу в порядке списка (как в mentions). */
-function tagsForRefs(refs: VideoRefItem[]): Map<string, string> {
-  const counters: Record<'image' | 'video' | 'audio', number> = { image: 0, video: 0, audio: 0 }
-  const map = new Map<string, string>()
-  for (const r of refs) map.set(r.id, refTag(r.kind, ++counters[r.kind]))
-  return map
-}
+
 
 /**
  * Переписывает теги референсов в промпте под новый порядок списка:
@@ -190,27 +185,7 @@ function tagsForRefs(refs: VideoRefItem[]): Map<string, string> {
  * Промежуточные плейсхолдеры исключают коллизии при перенумерации
  * (например, swap <Video 1> ↔ <Video 2>).
  */
-function rewritePromptTags(
-  prompt: string,
-  oldTags: Map<string, string>,
-  newTags: Map<string, string>,
-): string {
-  let any = false
-  for (const t of oldTags.values()) {
-    if (prompt.includes(t)) { any = true; break }
-  }
-  if (!any) return prompt
-  let text = prompt
-  for (const [id, oldTag] of oldTags) {
-    const next = newTags.get(id)
-    // Удалённый референс: его тег вырезается из промпта целиком
-    text = text.split(oldTag).join(next ? `\x00${id}\x00` : '')
-  }
-  for (const [id, tag] of newTags) {
-    text = text.split(`\x00${id}\x00`).join(tag)
-  }
-  return text
-}
+
 
 /* ──────────────── Component ──────────────── */
 
@@ -305,7 +280,7 @@ export function GenerateView() {
       // поддерживаются нодой — сюда они могут попасть только вставкой/дропом
       // мимо специализированных полей; честно отклоняем.
       const mode = useGenStore.getState().video.mode
-      if (mode !== 'ref') {
+      if (mode !== 'ref' && refModTokens(selectedRefMods('generate')) === 0) {
         const nonAudio = files.find((f) => detectKind(f.name) !== 'audio')
         if (nonAudio) {
           toast.error(mode === 't2v' ? 'В режиме «Текст» картинки и видео не используются' : 'В режиме «Кадры» картинки задаются полями «Первый/Последний кадр»')
@@ -511,33 +486,7 @@ export function GenerateView() {
 
   /* ──────────── Prompt mentions (from refs) ──────────── */
 
-  const mentions: MentionItem[] = useMemo(() => {
-    // Нумерация триггеров идёт ОТДЕЛЬНО по каждому типу референса
-    // (Picture N / Video N / Audio N), а не общим счётчиком по списку.
-    const counters: Record<'image' | 'video' | 'audio', number> = { image: 0, video: 0, audio: 0 }
-    return video.refs.map((ref) => {
-      const tag = ref.kind === 'image' ? 'Picture' : ref.kind === 'video' ? 'Video' : 'Audio'
-      counters[ref.kind] += 1
-      return {
-        id: ref.id,
-        label: ref.name,
-        trigger: `<${tag} ${counters[ref.kind]}>`,
-        kind: ref.kind,
-        color:
-          ref.kind === 'image'
-            ? 'bg-purple-500/15 text-purple-400'
-            : ref.kind === 'video'
-              ? 'bg-cyan-500/15 text-cyan-400'
-              : 'bg-emerald-500/15 text-emerald-400',
-        // Live blob preview while in-session; server URL after a reload
-        previewUrl:
-          ref.previewUrl ||
-          (ref.path
-            ? `/api/comfy/file?filename=${encodeURIComponent(ref.path)}&type=input`
-            : undefined),
-      }
-    })
-  }, [video.refs])
+  const mentions: MentionItem[] = useRefModMentions('generate', video.mode === 'ref' ? video.refs.filter(r => !(video.audioGuide && r.kind === 'audio')).map(r => ({...r, previewUrl: r.previewUrl || '/api/comfy/file?type=input&filename=' + encodeURIComponent(r.path)})) : video.mode === 'flf' ? [video.startFrame, video.endFrame].flatMap((r, i) => r ? [{id: 'frame-' + i, name: r.name, kind: 'image' as const, previewUrl: r.previewUrl}] : []) : [], video.prompt, setPrompt)
 
   const [promptEditorOpen, setPromptEditorOpen] = useState(false)
 
@@ -679,7 +628,7 @@ export function GenerateView() {
   // одна ждёт), хотя кнопка «Ещё в очередь» была активна.
   const lastSubmitAtRef = useRef(0)
 
-  const handleGenerate = useCallback(async () => {
+  const handleGenerate = useCallback(async (requestMode?: unknown) => {
     // Единый guard для всех путей запуска (кнопка, Ctrl+Enter, диалог
     // «сохранить и запустить»): ассистент занят — vram-arbiter вернёт 409
     if (assistantBusy) {
@@ -784,7 +733,7 @@ export function GenerateView() {
       v.mode === 'extend' ? 'clips2' : 'passes',
     )
     try {
-      await generate({
+      const request: Parameters<typeof generate>[0] = {
       modelType: v.modelType,
       mode: v.mode,
       pipeline: v.mode === 'extend' ? 'full' : v.pipeline,
@@ -846,12 +795,28 @@ export function GenerateView() {
       chunkFFChunks: v.chunkFFChunks,
       chunkFFThreshold: v.chunkFFThreshold,
       outputSubfolder: v.outputFolder || '', // (правка 91) папка проекта
-      })
+      }
+      if (requestMode === 'refmods') {
+        const seed = v.seed >= 0 ? v.seed : Math.floor(Math.random() * 2147483647)
+        request.seed = seed
+        const set = selectedRefMods('generate')
+        if (!refModTokens(set)) { toast.error('Выберите RefMods для сравнения'); return }
+        const comparisonId = crypto.randomUUID()
+        void generate({ ...request, refMods: emptyRefModSet(), refModComparison: {id: comparisonId, variant: 'baseline'} }).catch(() => {})
+        void generate({ ...request, refMods: set, refModComparison: {id: comparisonId, variant: 'refmods'} }).catch(() => {})
+        toast.success('A/B: две задачи с одним seed поставлены в очередь')
+      } else await generate(request)
     } catch {
       // (правка 729) Ошибки generate() уже показаны тостом внутри хука —
       // здесь только не даём промису уйти в unhandled rejection.
     }
   }, [generate, assistantBusy])
+
+  useEffect(() => {
+    const compare = () => void handleGenerate('refmods')
+    window.addEventListener('h3:refmod-compare', compare)
+    return () => window.removeEventListener('h3:refmod-compare', compare)
+  }, [handleGenerate])
 
   useEffect(() => {
     if (error) toast.error(error)
@@ -877,43 +842,10 @@ export function GenerateView() {
    *  следующий добавленный реф того же типа займёт тот же слот <Video 1>.
    *  Раньше теги вырезались сразу, и после добавления нового видео промпт
    *  оставался без тегов (жалоба с YouTube). */
-  const removeRefSynced = useCallback(
-    (id: string) => {
-      const v = useGenStore.getState().video
-      const removed = v.refs.find((r) => r.id === id)
-      // (правка 587) Освобождаем blob-URL удалённого референса (утечка:
-      // revoke не вызывался, как в refine-view — правка 345).
-      if (removed?.previewUrl?.startsWith('blob:')) {
-        try { URL.revokeObjectURL(removed.previewUrl) } catch { /* уже мёртв */ }
-      }
-      const sameKindLeft = removed
-        ? v.refs.filter((r) => r.kind === removed.kind && r.id !== id).length
-        : 0
-      if (removed && sameKindLeft === 0) {
-        removeRef(id)
-        return
-      }
-      const oldTags = tagsForRefs(v.refs)
-      const newTags = tagsForRefs(v.refs.filter((r) => r.id !== id))
-      const nextPrompt = rewritePromptTags(v.prompt, oldTags, newTags)
-      removeRef(id)
-      if (nextPrompt !== v.prompt) setPrompt(nextPrompt)
-    },
-    [removeRef, setPrompt],
-  )
+  const removeRefSynced = useCallback((id: string) => removeRef(id), [removeRef])
 
   /** Перемещение референса: теги <Video N> следуют за новым порядком списка. */
-  const moveRefSynced = useCallback(
-    (from: number, to: number) => {
-      const v = useGenStore.getState().video
-      const oldTags = tagsForRefs(v.refs)
-      moveRef(from, to)
-      const nextTags = tagsForRefs(useGenStore.getState().video.refs)
-      const nextPrompt = rewritePromptTags(v.prompt, oldTags, nextTags)
-      if (nextPrompt !== v.prompt) setPrompt(nextPrompt)
-    },
-    [moveRef, setPrompt],
-  )
+  const moveRefSynced = useCallback((from: number, to: number) => moveRef(from, to), [moveRef])
 
   /* ──────────── Ref card ──────────── */
 

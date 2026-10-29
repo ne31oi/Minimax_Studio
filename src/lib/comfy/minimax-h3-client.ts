@@ -11,6 +11,7 @@
 
 import { buildMiniMaxH3Workflow, videoSamplerStages, type MiniMaxH3Params } from './minimax-h3-template'
 import { buildRefineWorkflow, type RefineParams } from './refine-template'
+import { attachRefMods, type ResolvedRefModSet } from '../refmods/workflow'
 import { getClientId, registerPromptStages, type TileGeometry } from './progress-tracker'
 import { getVideoFormatSettings } from '../video-format-server' // (правка 386)
 
@@ -115,10 +116,10 @@ export async function uploadImage(
 }
 
 /** Submit a MiniMax H3 workflow. Returns prompt_id. */
-export async function submitVideo(params: MiniMaxH3Params): Promise<SubmitResult> {
+export async function submitVideo(params: MiniMaxH3Params, refMods?: ResolvedRefModSet): Promise<SubmitResult> {
   const workflow = buildMiniMaxH3Workflow({ ...params, videoFormat: getVideoFormatSettings() }) // (правка 386)
   // (правка 255) стадии сэмплеров → честный 0–100% в трекере
-  return submitWorkflowJson(workflow, videoSamplerStages(params))
+  return submitWorkflowJson(attachRefMods(workflow, refMods), videoSamplerStages(params))
 }
 
 /**
@@ -126,10 +127,10 @@ export async function submitVideo(params: MiniMaxH3Params): Promise<SubmitResult
  * LatentUpscaler3D → short Pass-2-style sampling).
  * Same VHS output options as submitVideo (no PNG poster / silent intermediate).
  */
-export async function submitRefine(params: RefineParams): Promise<SubmitResult> {
+export async function submitRefine(params: RefineParams, refMods?: ResolvedRefModSet): Promise<SubmitResult> {
   const workflow = buildRefineWorkflow({ ...params, videoFormat: getVideoFormatSettings() }) // (правка 386)
   // (правка 255) единственный проход — шкала 0–100 без деления на 2
-  return submitWorkflowJson(workflow, [['46:21']])
+  return submitWorkflowJson(attachRefMods(workflow, refMods), [['46:21']])
 }
 
 /** POST an API-format workflow to ComfyUI /prompt. */
@@ -137,8 +138,10 @@ export async function submitWorkflowJson(
   workflow: Record<string, unknown>,
   stages?: string[][],
   tileGeometry?: TileGeometry | null, // (правка 479)
+  options?: { promptId?: string },
 ): Promise<SubmitResult> {
   const body = {
+    ...(options?.promptId ? { prompt_id: options.promptId } : {}),
     prompt: workflow,
     client_id: getClientId(),
     // VideoHelperSuite (VHS_VideoCombine) otherwise writes THREE files per

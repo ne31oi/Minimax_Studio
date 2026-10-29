@@ -66,6 +66,7 @@ export function TileUpscaleView() {
   const patchParams = useTileUpscaleTarget((s) => s.patchParams)
 
   const [prompt, setPrompt] = useState('')
+  const [profile, setProfile] = useState<'standard' | 'open-h3'>('standard')
   // (правка 270) «Дополнительные параметры» — свёрнуты по умолчанию.
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [dragOver, setDragOver] = useState(false)
@@ -148,6 +149,7 @@ export function TileUpscaleView() {
         ? { inputSource: src.inputSource }
         : { sourceFilename: src.filename, sourceSubfolder: src.subfolder ?? '' }),
       prompt: prompt.trim() || undefined,
+      profile,
       seed: -1,
       tileSize: params.tileSize,
       overlap: params.overlap,
@@ -161,7 +163,7 @@ export function TileUpscaleView() {
       syncTiles: params.syncTiles,
     }
     await jobSubmit(body)
-  }, [prompt, uploadingSrc, params, jobSubmit])
+  }, [prompt, profile, uploadingSrc, params, jobSubmit])
 
   // (правка 319) Отмена/сброс — через стор (поллинг модульный).
   const cancel = useCallback(() => { void jobCancel() }, [jobCancel])
@@ -285,6 +287,21 @@ export function TileUpscaleView() {
               в «Дополнительные параметры» (паттерн из generate-view).
               (правка 462) Сырые <select> заменены на общий Select из
               @/components/ui/select (эталон вкладки «Генерация»). */}
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">Режим</Label>
+            <Select value={profile} disabled={busy} onValueChange={(v) => {
+              const next = v === 'open-h3' ? 'open-h3' : 'standard'
+              setProfile(next)
+              if (next === 'open-h3') patchParams({ tileSize: 512, syncTiles: false })
+            }}>
+              <SelectTrigger className="w-full h-9 bg-[var(--surface-2)] border-border text-sm rounded-md"><SelectValue /></SelectTrigger>
+              <SelectContent className="bg-[var(--surface-3)] border-border">
+                <SelectItem value="standard">Обычный Tile Upscale</SelectItem>
+                <SelectItem value="open-h3">Open H3 Refiner — тайлы (эксперимент)</SelectItem>
+              </SelectContent>
+            </Select>
+            {profile === 'open-h3' && <p className="text-xs text-muted-foreground">3 шага, Euler и фиксированные sigmas Open H3. Возможны изменения деталей и стыки тайлов.</p>}
+          </div>
           <div className="grid grid-cols-2 gap-2">
             <div className="space-y-1">
               <Label className="text-xs text-muted-foreground">Разрешение</Label>
@@ -304,9 +321,9 @@ export function TileUpscaleView() {
             <div className="space-y-1">
               <Label className="text-xs text-muted-foreground">Шаги</Label>
               <Select
-                value={String(params.steps)}
+                value={String(profile === 'open-h3' ? 3 : params.steps)}
                 onValueChange={(v) => patchParams({ steps: parseInt(v, 10) })}
-                disabled={busy}
+                disabled={busy || profile === 'open-h3'}
               >
                 <SelectTrigger className="w-full h-9 bg-[var(--surface-2)] border-border text-sm rounded-md">
                   <SelectValue />
@@ -321,7 +338,7 @@ export function TileUpscaleView() {
           {/* (правка 461) Сырой <input type="range"> заменён на общий
               SettingSlider (как во вкладке «Генерация»): значение — в
               formatValue, пояснение — в labelTitle-тултипе. */}
-          <SettingSlider
+          {profile !== 'open-h3' && <SettingSlider
             label="Денойз"
             labelTitle="Насколько сильно модель перерисовывает картинку при апскейле. Меньше — результат ближе к исходнику, больше — больше новых деталей."
             value={params.denoise}
@@ -331,7 +348,7 @@ export function TileUpscaleView() {
             onChange={(v) => patchParams({ denoise: v })}
             formatValue={(v) => v.toFixed(2)}
             disabled={busy}
-          />
+          />}
 
           {/* (правка 270) Дополнительные параметры — тайлы, перекрытия, temporal. */}
           <div className="space-y-2">

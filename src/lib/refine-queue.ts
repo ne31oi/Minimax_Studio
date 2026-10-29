@@ -17,8 +17,10 @@
 import { useGenQueue, type QueueItem } from './gen-queue-store'
 import { acquireComfyTurn, isComfyTurnActive } from './comfy-turn'
 import { useGalleryRefresh } from './gallery-refresh-store'
+import { selectedRefMods } from './refmods/store'
 
 export interface RefineTask {
+  refMods?: import('./refmods/types').RefModSet
   profile?: 'standard' | 'open-h3'
   mode: 'whole' | 'chunks'
   /** Оригинал из галереи (output), из которого делается рефайн. */
@@ -77,6 +79,7 @@ let activeItemId: string | null = null
 
 /** Поставить рефайн в общую очередь. Возвращает id элемента очереди. */
 export function enqueueRefine(task: RefineTask): string {
+  task = { ...task, refMods: task.refMods ?? selectedRefMods('refine') }
   const id = useGenQueue.getState().enqueue('refine', `Refine: ${task.source.filename}`)
   tasks.set(id, task)
   turns.set(id, acquireComfyTurn(id))
@@ -197,6 +200,7 @@ async function runTask(id: string, task: RefineTask): Promise<void> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       sourceFilename: task.source.filename,
+      refMods: task.refMods,
       profile: task.profile,
       sourceSubfolder: task.source.subfolder,
       ...(task.inputSource ? { inputSource: task.inputSource } : {}),

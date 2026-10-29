@@ -199,6 +199,7 @@ export function cleanupLostPendingQueueItems(): void {
   for (const item of items) {
     if (item.promptId) continue
     if (item.type === 'upscale') continue // DLSS живёт отдельно
+    if (item.type === 'refmod-build' || item.type === 'refmod-preview') continue // RefMod payloads have their own persistent journal
     if (item.status !== 'submitting' && item.status !== 'queued') continue
     if (item.type === 'video' && item.status === 'submitting') continue
 

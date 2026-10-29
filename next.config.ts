@@ -1,6 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Allows an isolated verification server while the installed studio is running.
+  distDir: process.env.STUDIO_DIST_DIR || '.next',
+  agentRules: !process.env.STUDIO_DIST_DIR,
   // (правка 587) ignoreBuildErrors удалён: с ним продакшн-сборка отправлялась
   // с непроверенными типами (типовые ошибки вроде isTurbo жили в проде).
   // Проверка типов теперь выполняется на каждом `next build`.

@@ -1,13 +1,14 @@
+import { resolveRefModSet } from '@/lib/refmods/resolve'
 import { NextRequest, NextResponse } from 'next/server'
 import fs from 'fs'
 import path from 'path'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
-import { submitVideo, uploadImage, uploadExtenderRef, COMFY_URL } from '@/lib/comfy/minimax-h3-client'
+import { submitVideo as baseSubmitVideo, uploadImage, uploadExtenderRef, COMFY_URL } from '@/lib/comfy/minimax-h3-client'
 import type { ExtenderRefDescriptor } from '@/lib/comfy/minimax-h3-client'
 import { setActivePrompt } from '@/lib/comfy/progress-tracker'
 import { readStaged, deleteStaged } from '@/lib/staging'
-import { recordPendingMeta } from '@/lib/pending-meta'
+import { recordPendingMeta as baseRecordPendingMeta } from '@/lib/pending-meta'
 import { recordInflight } from '@/lib/inflight-journal'
 import { loadLoras, listLoraFiles, TURBO_LORA_NAME } from '@/lib/loras-config'
 import { getAppConfig } from '@/lib/app-config'
@@ -55,6 +56,11 @@ export async function POST(req: NextRequest) {
       extendSourceName?: string
       extendSourceSubfolder?: string
     }
+    const resolvedRefMods = await resolveRefModSet((body as { refMods?: unknown }).refMods, body.mode === 'extend' ? 'extend' : 'generate')
+    const refModSnapshot = { items: resolvedRefMods.items, frameCurve: resolvedRefMods.frameCurve, stepCurve: resolvedRefMods.stepCurve, maxTokens: resolvedRefMods.maxTokens, retention: resolvedRefMods.retention, versions: resolvedRefMods.versions }
+    const submitVideo = (params: Parameters<typeof baseSubmitVideo>[0]) => baseSubmitVideo(params, resolvedRefMods)
+    const recordPendingMeta = (id: string, params: Parameters<typeof baseRecordPendingMeta>[1]) => baseRecordPendingMeta(id, { ...params, refMods: refModSnapshot })
+
 
     if (!body?.prompt) {
       return NextResponse.json({ error: 'Prompt is required.' }, { status: 400 })

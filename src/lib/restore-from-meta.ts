@@ -6,6 +6,10 @@
  */
 import { toast } from 'sonner'
 import { useGenStore, type VideoRefItem } from './gen-store'
+import { useRefMods } from './refmods/store'
+import { validateRefModSet } from './refmods/workflow'
+import { REF_MOD_TARGETS, type RefModEntry, type RefModTarget } from './refmods/types'
+import { beginReferenceRestore, endReferenceRestore } from './refmods/remapping'
 import { FALLBACK_H3_PRESETS, collectResolutionValues } from '@/components/h3/video-shared'
 
 /** (правка 124) Все номиналы пресетов — чтобы «Повторить» вернул режим
@@ -28,6 +32,7 @@ interface MetaReference {
 }
 
 interface MetaJson {
+  refMods?: unknown
   prompt?: string
   seed?: number
   /** (правка 146) Режим генерации: 'ref' | 't2v' | 'flf'. */
@@ -131,6 +136,7 @@ function mapRefs(metaRefs: MetaReference[]): VideoRefItem[] {
  * @param filePath  Relative path: `subfolder/filename`
  */
 export async function restoreFromMeta(filePath: string): Promise<boolean> {
+  beginReferenceRestore()
   try {
     const res = await fetch(`/api/comfy/meta?path=${encodeURIComponent(filePath)}`)
     if (!res.ok) {
@@ -150,6 +156,14 @@ export async function restoreFromMeta(filePath: string): Promise<boolean> {
       : meta
 
     const store = useGenStore.getState()
+    const refModTarget: RefModTarget = REF_MOD_TARGETS.includes(params.generation_mode as RefModTarget) ? params.generation_mode as RefModTarget : 'generate'
+    const restoredRefMods = validateRefModSet(params.refMods)
+    if (restoredRefMods.items.length) {
+      const lib = await fetch('/api/refmods').then(r => r.json()).catch(() => null) as { entries?: RefModEntry[] } | null
+      const problems = lib?.entries ? restoredRefMods.items.filter(i => { const current=lib.entries!.find(e=>e.id===i.entryId); return !current || current.fingerprint!==i.fingerprint }) : []
+      if (problems.length) toast.warning('Некоторые RefMods отсутствуют или изменены', {description: problems.map(i=>i.name).join(', ') + '. Перед запуском обновите их в наборе.'})
+    }
+    useRefMods.getState().set(refModTarget, restoredRefMods)
 
     // ── Build the patch ──
     const patch: Record<string, unknown> = {}
@@ -464,5 +478,7 @@ export async function restoreFromMeta(filePath: string): Promise<boolean> {
     const msg = err instanceof Error ? err.message : String(err)
     toast.error('Не удалось восстановить параметры', { description: msg })
     return false
+  } finally {
+    endReferenceRestore()
   }
 }

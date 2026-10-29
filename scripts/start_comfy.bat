@@ -97,6 +97,8 @@ if not exist "%COMFY_ROOT%\ComfyUI\comfy\ldm\models\autoencoder.py" (
 echo  [OK] ComfyUI version compatible.
 
 REM Launch ComfyUI
+REM Keep the local RefMod integration in sync without updating ComfyUI.
+if exist "custom nodes\minimax_studio_refmods\nodes.py" xcopy "custom nodes\minimax_studio_refmods" "%COMFY_ROOT%\ComfyUI\custom_nodes\minimax_studio_refmods\" /E /I /Y /Q >nul
 if "%DYNAMIC_VRAM%"=="0" (
     "%COMFY_ROOT%\python_embeded\python.exe" -I "%COMFY_ROOT%\ComfyUI\main.py" --windows-standalone-build --use-ck-attention --disable-auto-launch --reserve-vram %RESERVE_VRAM% --disable-dynamic-vram %EXTRA_FLAGS% %HEADROOM_FLAG%
     exit /b %errorlevel%

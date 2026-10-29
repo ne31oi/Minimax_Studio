@@ -1,0 +1,4 @@
+const fs=require('fs'),path=require('path');const prettier=require('../.install-cache/refmods-devtools/node_modules/prettier');
+function walk(dir){return fs.readdirSync(dir,{withFileTypes:true}).flatMap(e=>e.isDirectory()?walk(path.join(dir,e.name)):[path.join(dir,e.name)])}
+const files=['src/lib/refmods','src/app/api/refmods'].flatMap(walk).concat(fs.readdirSync('src/components/h3').filter(n=>n.startsWith('refmods-')).map(n=>'src/components/h3/'+n),'src/hooks/use-refmod-mentions.ts','scripts/test-refmods.cjs','scripts/test-refmods-browser.cjs');
+(async()=>{for(const file of files)if(/\.(ts|tsx|cjs)$/.test(file))fs.writeFileSync(file,await prettier.format(fs.readFileSync(file,'utf8'),{filepath:file,semi:false,singleQuote:true,trailingComma:'all',printWidth:100}));console.log('Formatted',files.length,'new source files')})().catch(e=>{console.error(e);process.exitCode=1});

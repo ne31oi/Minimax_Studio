@@ -84,6 +84,8 @@ export function sanitizeVedaIndexList(v: unknown): string {
 }
 
 export interface MiniMaxH3Params {
+  refModComparison?: { id: string; variant: 'baseline' | 'refmods' }
+  refMods?: import('../refmods/types').RefModSet
   prompt: string
   /** Uploaded image filenames in ComfyUI input/ (max 9). */
   refImages: string[]
