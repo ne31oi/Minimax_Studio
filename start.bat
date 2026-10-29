@@ -392,6 +392,7 @@ set "DYN_FLAG="
 if "%DYNAMIC_VRAM%"=="0" set "DYN_FLAG=--disable-dynamic-vram"
 
 REM Запускаем ComfyUI напрямую
+if exist "custom nodes\minimax_studio_refmods\nodes.py" xcopy "custom nodes\minimax_studio_refmods" "%COMFY_ROOT%\ComfyUI\custom_nodes\minimax_studio_refmods\" /E /I /Y /Q >nul
 start /b "" "%COMFY_ROOT%\python_embeded\python.exe" -I "%COMFY_ROOT%\ComfyUI\main.py" --windows-standalone-build --use-ck-attention --disable-auto-launch --reserve-vram %RESERVE_VRAM% %DYN_FLAG% %EXTRA_FLAGS% %HEADROOM_FLAG%
 
 REM Wait for ComfyUI to be ready (заставка в браузере покажет это сама)

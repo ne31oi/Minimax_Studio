@@ -22,6 +22,7 @@ export interface ControlNetTarget {
 }
 
 export interface ControlNetSource {
+  hasAudio?: boolean
   url: string
   filename: string
   subfolder: string

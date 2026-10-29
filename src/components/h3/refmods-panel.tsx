@@ -3,8 +3,10 @@ import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { ChevronDownIcon, ChevronUpIcon, LibraryIcon, PlusIcon, Trash2Icon } from 'lucide-react'
 import { useRefMods } from '@/lib/refmods/store'
+import { useGenStore } from '@/lib/gen-store'
+import { useControlNetTarget } from '@/lib/controlnet-target-store'
+import { studioReferenceLabels } from '@/lib/refmods/reference-map'
 import {
-  activeMembers,
   activeSetMembers,
   allowsRefModAudio,
   CURVE_DIRECTIONS,
@@ -124,8 +126,11 @@ export function RefModCurveEditor({
   )
 }
 export function RefModsPanel({ target }: { target: RefModTarget }) {
+  useGenStore(s=>s.video)
+  useControlNetTarget()
   const store = useRefMods()
   const set = store.sets[target] || emptyRefModSet()
+  const labels=['generate','extend','controlnet'].includes(target) ? studioReferenceLabels(target,set) : []
   const audio = allowsRefModAudio(target)
   const [open, setOpen] = useState(false)
   const [entries, setEntries] = useState<RefModEntry[]>([])
@@ -376,6 +381,7 @@ export function RefModsPanel({ target }: { target: RefModTarget }) {
                         }}
                       />
                       {m.name} · {m.kind} · {m.tokens}
+                      {labels.filter(l=>l.id.startsWith(`${item.id}:${m.index}:`)).map(l=><code key={l.id} className="text-amber-400 ml-1">{l.trigger}</code>)}
                     </label>
                   ))}
                 </div>

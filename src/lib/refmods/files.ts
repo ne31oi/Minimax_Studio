@@ -170,6 +170,7 @@ export function inspectRefMod(file: string, id = '', root = ''): RefModEntry {
     // Header plus stat catches ordinary replacement; full SHA is recorded for queued tasks below.
     const fingerprint = createHash('sha256')
       .update(bytes)
+      .update(JSON.stringify(meta))
       .update(`${stat.size}:${stat.mtimeMs}`)
       .digest('hex')
     return {

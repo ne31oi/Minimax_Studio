@@ -113,10 +113,20 @@ export function refModTokens(set: RefModSet, audio = true): number {
     0,
   )
 }
-export function activeSetMembers(set: RefModSet, item: RefModSelection, audio = true): RefModMember[] {
+export function activeSetMembers(
+  set: RefModSet,
+  item: RefModSelection,
+  audio = true,
+): RefModMember[] {
   if (set.retention === 0) return []
-  return activeMembers(item, audio).filter((m) =>
-    !(m.shape?.[2] === 1 && m.kind !== 'audio' && set.frameCurve.direction !== 'constant' && set.frameCurve.value === 0),
+  return activeMembers(item, audio).filter(
+    (m) =>
+      !(
+        m.shape?.[2] === 1 &&
+        m.kind !== 'audio' &&
+        set.frameCurve.direction !== 'constant' &&
+        set.frameCurve.value === 0
+      ),
   )
 }
 export interface ReferenceLabel {

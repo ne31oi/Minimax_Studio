@@ -21,7 +21,7 @@
  */
 const { app, BrowserWindow, Menu, dialog, shell, ipcMain } = require('electron')
 const { spawn, spawnSync } = require('node:child_process')
-const { existsSync, readFileSync, mkdirSync, writeFileSync } = require('node:fs')
+const { existsSync, readFileSync, mkdirSync, writeFileSync, cpSync } = require('node:fs')
 const fsPromises = require('node:fs').promises
 const path = require('node:path')
 const util = require('node:util')
@@ -342,6 +342,10 @@ function startComfy() {
   if (!existsSync(COMFY_PY)) {
     console.log('[desktop] ComfyUI не найден — режим frontend-only (генерация недоступна)')
     return null
+  }
+  const integration = path.join(APP_ROOT, 'custom nodes', 'minimax_studio_refmods')
+  if (existsSync(path.join(integration, 'nodes.py'))) {
+    cpSync(integration, path.join(COMFY_ROOT, 'ComfyUI', 'custom_nodes', 'minimax_studio_refmods'), { recursive: true })
   }
   const v = parseIniVram()
   const args = [

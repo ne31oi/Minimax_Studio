@@ -1,6 +1,7 @@
 """CPU integration checks against the real pinned ComfyUI and MiniMaxH3Mod APIs."""
 import asyncio
 import importlib.util
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -98,6 +99,12 @@ class IntegrationTests(unittest.TestCase):
             with self.assertRaises(ValueError): nodes.StudioH3RefModLoad().load(json.dumps(spec))
             spec["maxTokens"]=5120;spec["versions"]={"test":"bad-hash"}
             with self.assertRaisesRegex(ValueError,"changed"): nodes.StudioH3RefModLoad().load(json.dumps(spec))
+            sidecar=Path(stem+".json");sidecar.write_text("{}")
+            digest=hashlib.sha256(Path(stem+".safetensors").read_bytes()+sidecar.read_bytes()).hexdigest()
+            spec["versions"]={"test":digest}
+            self.assertEqual(len(nodes.StudioH3RefModLoad().load(json.dumps(spec))[0]),2)
+            sidecar.write_text('{"changed":true}')
+            with self.assertRaisesRegex(ValueError,"changed"):nodes.StudioH3RefModLoad().load(json.dumps(spec))
 
     def test_creator_one_source_per_member_and_budget(self):
         from PIL import Image

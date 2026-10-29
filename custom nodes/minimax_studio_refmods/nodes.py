@@ -53,8 +53,9 @@ class StudioH3RefModLoad:
     @classmethod
     def IS_CHANGED(cls, settings):
         spec = json.loads(settings)
-        return [(str(p), os.stat(p).st_size, os.stat(p).st_mtime_ns)
-                for p in spec.get("files", {}).values()]
+        files = [Path(p) for p in spec.get("files", {}).values()]
+        files += [p.with_suffix(".json") for p in list(files) if p.with_suffix(".json").is_file()]
+        return [(str(p), p.stat().st_size, p.stat().st_mtime_ns) for p in files]
 
     def load(self, settings):
         spec = json.loads(settings)
@@ -72,6 +73,11 @@ class StudioH3RefModLoad:
                 with p.open("rb") as f:
                     for chunk in iter(lambda: f.read(1024 * 1024), b""):
                         digest.update(chunk)
+                sidecar = p.with_suffix(".json")
+                if sidecar.is_file():
+                    if sidecar.stat().st_size > 1024 * 1024:
+                        raise ValueError("RefMod metadata sidecar is too large")
+                    digest.update(sidecar.read_bytes())
                 if digest.hexdigest() != expected:
                     raise ValueError(f"RefMod changed after submission: {p.name}")
             stem = str(p.with_suffix(""))
@@ -84,6 +90,8 @@ class StudioH3RefModLoad:
                 weight = item["audioStrength"] if audio else item["visualStrength"]
                 loaded = [] if not weight or (audio and item["components"] == "Visual") or (not audio and item["components"] == "Audio") else [(mod, weight)]
             for mod, weight in loaded:
+                if not torch.isfinite(mod.latent).all():
+                    raise ValueError(f"RefMod contains non-finite latent values: {p.name}")
                 curve = spec.get("frameCurve", {})
                 if mod.kind != "audio" and mod.latent_t <= 1 and curve.get("direction", "constant") != "constant" and curve.get("value", 1) == 0:
                     continue

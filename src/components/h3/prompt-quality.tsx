@@ -15,12 +15,13 @@ interface PromptQualityProps {
   prompt: string
   /** Number of currently loaded references (unified numbering). */
   refsCount: number
+  referenceTags?: string[]
   className?: string
 }
 
 type Item = { kind: 'ok' | 'warn' | 'muted'; text: string }
 
-function analyze(prompt: string, refsCount: number): Item[] {
+function analyze(prompt: string, refsCount: number, referenceTags?: string[]): Item[] {
   const items: Item[] = []
   const trimmed = prompt.trim()
   if (!trimmed) return items
@@ -36,8 +37,9 @@ function analyze(prompt: string, refsCount: number): Item[] {
     // (например, два раза <Picture 1>) — это ОДИН тег.
     const unique = new Set(tags.map((t) => t[0]))
     const maxNum = Math.max(...tags.map((t) => parseInt(t[2], 10)))
-    if (maxNum > refsCount) {
-      items.push({ kind: 'warn', text: `Тег №${maxNum} указывает на несуществующий референс (загружено ${refsCount})` })
+    const missing=referenceTags ? [...unique].filter(tag=>!referenceTags.includes(tag)) : []
+    if (referenceTags ? missing.length>0 : maxNum > refsCount) {
+      items.push({ kind: 'warn', text: referenceTags ? `Нет референса для ${missing.join(', ')}` : `Тег №${maxNum} указывает на несуществующий референс (загружено ${refsCount})` })
     } else {
       const repeated = tags.length - unique.size
       items.push({
@@ -76,8 +78,8 @@ const KIND_CLASS = {
   muted: 'text-muted-foreground bg-[var(--surface-2)]/70 border-border',
 } as const
 
-export function PromptQuality({ prompt, refsCount, className }: PromptQualityProps) {
-  const items = useMemo(() => analyze(prompt, refsCount), [prompt, refsCount])
+export function PromptQuality({ prompt, refsCount, referenceTags, className }: PromptQualityProps) {
+  const items = useMemo(() => analyze(prompt, refsCount, referenceTags), [prompt, refsCount, referenceTags])
   if (items.length === 0) return null
 
   return (

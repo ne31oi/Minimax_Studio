@@ -1,27 +1,13 @@
 'use client'
-import { useGenStore } from '../gen-store'
-import { useControlNetTarget } from '../controlnet-target-store'
 import { selectedRefMods } from './store'
-import { referenceLabels, refModTokens, type RefModTarget } from './types'
+import { refModTokens, type RefModTarget } from './types'
+import { studioReferenceLabels } from './reference-map'
 export function refModAssistantContext(mode: string): string {
   const target: RefModTarget =
     mode === 'extend' ? 'extend' : mode === 'controlnet' ? 'controlnet' : 'generate'
   const set = selectedRefMods(target)
   if (!refModTokens(set)) return ''
-  const video = useGenStore.getState().video
-  const raw =
-    target === 'extend'
-      ? video.extendImageRefs
-      : target === 'controlnet'
-        ? useControlNetTarget.getState().refImages.map((r) => ({ ...r, kind: 'image' as const }))
-        : video.mode === 'ref'
-          ? video.refs.filter((r) => !(video.audioGuide && r.kind === 'audio'))
-          : video.mode === 'flf'
-            ? [video.startFrame, video.endFrame].flatMap((r, i) =>
-                r ? [{ id: `frame-${i}`, name: r.name, kind: 'image' as const }] : [],
-              )
-            : []
-  const labels = referenceLabels(raw, set)
+  const labels = studioReferenceLabels(target, set)
   return (
     '\n\nACTIVE REFMODS — authoritative reference map for this request:\n' +
     labels.map((l) => `${l.trigger} = ${l.label}`).join('\n') +

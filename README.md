@@ -18,6 +18,8 @@
 
 ## Скриншоты
 
+Мастерская **RefMods**: библиотека повторно используемых референсов, редактируемые проекты, отдельные наборы для каждого режима и A/B-сравнение. [Использование и проверка](REFMODS.md).
+
 | Главное окно | Генерация по референсу | Результат |
 | :---: | :---: | :---: |
 | [![Главное окно](screenshots/main-window.jpg)](screenshots/main-window.jpg) | [![Генерация по референсу](screenshots/reference-generation.jpg)](screenshots/reference-generation.jpg) | [![Результат](screenshots/result-lightbox.jpg)](screenshots/result-lightbox.jpg) |

@@ -29,6 +29,11 @@ export async function resolveRefModSet(
     files[item.entryId] = file
     const hash = createHash('sha256')
     for await (const chunk of fs.createReadStream(file)) hash.update(chunk)
+    const sidecar = file.replace(/\.safetensors$/i, '.json')
+    if (fs.existsSync(sidecar)) {
+      if (fs.statSync(sidecar).size > 1024 * 1024) throw new Error('Слишком большой sidecar RefMod')
+      hash.update(fs.readFileSync(sidecar))
+    }
     versions[item.entryId] = hash.digest('hex')
   }
   const tokens = refModTokens(set)

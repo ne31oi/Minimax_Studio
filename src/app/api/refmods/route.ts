@@ -84,7 +84,14 @@ export async function POST(req: NextRequest) {
     } else if (ext === '.json') {
       if (fs.statSync(temp).size > 1024 * 1024) throw new Error('Слишком большой sidecar')
       const j = JSON.parse(fs.readFileSync(temp, 'utf8'))
-      if (!['image', 'video', 'audio'].includes(j.kind))
+      if (
+        !['image', 'video', 'audio', 'bundle'].includes(j.kind) ||
+        (j.kind === 'bundle' &&
+          (j._format_version !== 5 ||
+            !Array.isArray(j.members) ||
+            !j.members.length ||
+            j.members.length > 256))
+      )
         throw new Error('Некорректный sidecar RefMod')
     } else if (ext === '.png') {
       const sharp = (await import('sharp')).default

@@ -1246,7 +1246,7 @@ export function ControlNetView() {
           </div>
 
           {/* (правка 515) Живые подсказки качества — как на вкладке «Генерация» */}
-          <PromptQuality prompt={prompt} refsCount={refImages.length} />
+          <PromptQuality prompt={prompt} refsCount={refModMentions.length} referenceTags={refModMentions.map(m=>m.trigger)} />
 
           {/* (правка 515) История + Готовые примеры — портал-дропдауны, как в generate-view */}
           <div className="flex items-center gap-1.5">

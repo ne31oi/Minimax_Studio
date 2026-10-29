@@ -172,12 +172,18 @@ try {
     assert.equal(refModTokens({ ...set, items: [{ ...set.items[0], strength: 0 }] }), 0)
   })
   test('zero master retention and zero single-frame cap remove labels and budget', () => {
-    const off={...set,retention:0}
-    assert.equal(refModTokens(off),0)
-    assert.equal(referenceLabels([],off).length,0)
-    const capped={...set,frameCurve:{direction:'concept_at_end',shape:'linear',value:0}}
-    assert.deepEqual(referenceLabels([],capped).map(l=>l.kind),['audio','audio'])
-    assert.equal(refModTokens(capped),80)
+    const off = { ...set, retention: 0 }
+    assert.equal(refModTokens(off), 0)
+    assert.equal(referenceLabels([], off).length, 0)
+    const capped = {
+      ...set,
+      frameCurve: { direction: 'concept_at_end', shape: 'linear', value: 0 },
+    }
+    assert.deepEqual(
+      referenceLabels([], capped).map((l) => l.kind),
+      ['audio', 'audio'],
+    )
+    assert.equal(refModTokens(capped), 80)
   })
   test('reject NaN, invalid copies, duplicate IDs and curves', () => {
     for (const patch of [{ strength: NaN }, { copies: 1.5 }, { copies: 9 }, { enabled: 'false' }])
@@ -280,7 +286,17 @@ try {
         assert.throws(() => attachRefMods(out, resolved), /Повторное/)
       })
   for (const [name, builder, params] of [
-    ['controlnet',buildControlNetWorkflow,{sourceVideo:'test.mp4',sourceWidth:512,sourceHeight:512,sourceFrames:124,controlType:'direct'}],
+    [
+      'controlnet',
+      buildControlNetWorkflow,
+      {
+        sourceVideo: 'test.mp4',
+        sourceWidth: 512,
+        sourceHeight: 512,
+        sourceFrames: 124,
+        controlType: 'direct',
+      },
+    ],
     [
       'refine',
       buildRefineWorkflow,
@@ -298,21 +314,43 @@ try {
       const out = attachRefMods(graph, resolved)
       assert.ok(Object.values(out).some((n) => n.class_type.startsWith('StudioH3RefMod')))
     })
-  test('chunked refine transforms every window and retains native window anchors',()=>{
-    const graph=buildChunkedRefineWorkflow({sourceVideo:'test.mp4',sourceWidth:512,sourceHeight:512,sourceFrames:260,targetShortSide:'same',chunkSeconds:3})
-    const before=Object.values(graph).filter(n=>n.class_type==='MiniMaxH3ReferenceToVideo')
-    assert.ok(before.length>1)
-    const out=attachRefMods(graph,resolved)
-    const after=Object.values(out).filter(n=>n.class_type==='StudioH3RefModReferenceToVideo')
-    assert.equal(after.length,before.length)
-    assert.deepEqual(after.map(n=>n.inputs.ref_images),before.map(n=>n.inputs.ref_images))
+  test('chunked refine transforms every window and retains native window anchors', () => {
+    const graph = buildChunkedRefineWorkflow({
+      sourceVideo: 'test.mp4',
+      sourceWidth: 512,
+      sourceHeight: 512,
+      sourceFrames: 260,
+      targetShortSide: 'same',
+      chunkSeconds: 3,
+    })
+    const before = Object.values(graph).filter((n) => n.class_type === 'MiniMaxH3ReferenceToVideo')
+    assert.ok(before.length > 1)
+    const out = attachRefMods(graph, resolved)
+    const after = Object.values(out).filter(
+      (n) => n.class_type === 'StudioH3RefModReferenceToVideo',
+    )
+    assert.equal(after.length, before.length)
+    assert.deepEqual(
+      after.map((n) => n.inputs.ref_images),
+      before.map((n) => n.inputs.ref_images),
+    )
   })
-  test('tile sampler receives the shared step curve',()=>{
-    const graph=buildTileUpscaleWorkflow({sourceVideo:'test.mp4',sourceWidth:512,sourceHeight:512,sourceFrames:124})
-    const out=attachRefMods(graph,{...resolved,stepCurve:{direction:'concept_at_start',shape:'ease',value:0.7}})
-    const sampler=Object.values(out).find(n=>n.class_type==='MMH3UltimateUpscale'||n.class_type==='MMH3UltimateUpscaleSync')
+  test('tile sampler receives the shared step curve', () => {
+    const graph = buildTileUpscaleWorkflow({
+      sourceVideo: 'test.mp4',
+      sourceWidth: 512,
+      sourceHeight: 512,
+      sourceFrames: 124,
+    })
+    const out = attachRefMods(graph, {
+      ...resolved,
+      stepCurve: { direction: 'concept_at_start', shape: 'ease', value: 0.7 },
+    })
+    const sampler = Object.values(out).find(
+      (n) => n.class_type === 'MMH3UltimateUpscale' || n.class_type === 'MMH3UltimateUpscaleSync',
+    )
     assert.ok(sampler)
-    assert.equal(out[sampler.inputs.model[0]].class_type,'MiniMaxH3RefModStepCurve')
+    assert.equal(out[sampler.inputs.model[0]].class_type, 'MiniMaxH3RefModStepCurve')
   })
   test('step curve on each guider and original graph untouched', () => {
     const graph = buildMiniMaxH3Workflow({ ...base, mode: 'ref' })

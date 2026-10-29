@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
     for (const ref of body.references) {
       if (!ref || typeof ref.path !== 'string' || !['image', 'video', 'audio'].includes(ref.kind))
         throw new Error('Некорректный референс')
-      const file = inside(cfg.inputDir, ref.path)
+      const file = inside(ref.type === 'output' ? cfg.outputDir : cfg.inputDir, ref.path)
       const stat = fs.statSync(file)
       const key = `${file}:${stat.size}:${stat.mtimeMs}`
       let info = cache.get(key)

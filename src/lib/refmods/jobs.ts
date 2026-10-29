@@ -5,7 +5,13 @@ import { projectDir, readProject, validateProject } from './projects'
 import { COMFY_URL, submitWorkflowJson } from '../comfy/minimax-h3-client'
 import { runGeneration } from '../vram-arbiter'
 import { resolveRefModSet } from './resolve'
-import { activeSetMembers, emptyRefModSet, type RefModJob, type RefModSet, type RefModProject } from './types'
+import {
+  activeSetMembers,
+  emptyRefModSet,
+  type RefModJob,
+  type RefModSet,
+  type RefModProject,
+} from './types'
 function jobsDir() {
   const dir = path.join(refModDataDir(), 'jobs')
   fs.mkdirSync(dir, { recursive: true })
@@ -66,7 +72,10 @@ export async function refreshRefModJob(id: string): Promise<RefModJob> {
     const queued = q.queue_pending?.some((r: unknown[]) => r[1] === job.promptId)
     if (running) job.status = 'running'
     else if (queued) job.status = 'queued'
-    else if (Date.now() - Date.parse(job.createdAt) > (job.status === 'submitting' ? 120000 : 15000)) {
+    else if (
+      Date.now() - Date.parse(job.createdAt) >
+      (job.status === 'submitting' ? 120000 : 15000)
+    ) {
       job.status = 'error'
       job.error = 'Задача RefMod отсутствует в ComfyUI после перезапуска или отмены'
     }

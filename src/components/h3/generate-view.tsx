@@ -11,6 +11,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRefModMentions } from '@/hooks/use-refmod-mentions'
 import { selectedRefMods } from '@/lib/refmods/store'
 import { emptyRefModSet, refModTokens } from '@/lib/refmods/types'
+import { studioReferenceLabels } from '@/lib/refmods/reference-map'
 import { createPortal } from 'react-dom'
 import { motion } from 'framer-motion'
 import {
@@ -655,12 +656,14 @@ export function GenerateView() {
     // и тег <Audio N> в prompt — корректная ссылка на аудио-референс.
     // <Subject N> — только FORMAT B (режим 'ref'), в t2v/flf чистим всегда.
     const mode = v.mode
+    const selectedSet = selectedRefMods('generate')
+    const hasRefMods = refModTokens(selectedSet) > 0
     const removedTags: string[] = []
     if (mode !== 'ref') {
       // Убираем <Picture N> и <Video N> (включая закрывающие </Picture N>)
       const picRe = /<\/?(?:Picture|Video)\s*\d+\s*>/g
       const picMatches = prompt.match(picRe)
-      if (picMatches) {
+      if (picMatches && !hasRefMods) {
         for (const m of picMatches) {
           const norm = m.replace(/^<\//, '<')
           if (!removedTags.includes(norm)) removedTags.push(norm)
@@ -701,6 +704,11 @@ export function GenerateView() {
         if (r.kind === 'image') counts.Picture++
         else if (r.kind === 'video') counts.Video++
         else if (r.kind === 'audio') counts.Audio++
+      }
+      if (hasRefMods) {
+        counts.Picture=counts.Video=counts.Audio=0
+        for (const label of studioReferenceLabels('generate',selectedSet))
+          counts[label.kind==='image'?'Picture':label.kind==='video'?'Video':'Audio']++
       }
       const dangling = new Set<string>()
       const tagRe = /<(Picture|Video|Audio)\s+(\d+)\s*>/g
@@ -1921,7 +1929,7 @@ export function GenerateView() {
               />
             </div>
             {/* Live prompt quality hints (non-blocking) */}
-            <PromptQuality prompt={video.prompt} refsCount={video.refs.length} />
+            <PromptQuality prompt={video.prompt} refsCount={mentions.length} referenceTags={mentions.map(m=>m.trigger)} />
 
             {/* Prompt tools: history & ready-made examples.
                 Dropdowns render in a portal (document.body) — inside the

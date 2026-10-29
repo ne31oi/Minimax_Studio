@@ -86,8 +86,7 @@ export function attachRefMods(
   workflow: Record<string, unknown>,
   set?: ResolvedRefModSet,
 ): Record<string, unknown> {
-  if (!set || !set.items.some((i) => activeSetMembers(set, i).length))
-    return workflow
+  if (!set || !set.items.some((i) => activeSetMembers(set, i).length)) return workflow
   const out = structuredClone(workflow) as Record<string, Node>
   const prefix = 'studio_refmods'
   if (out[prefix]) throw new Error('Повторное подключение RefMods')

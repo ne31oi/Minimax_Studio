@@ -270,20 +270,32 @@ export function RefModsView() {
   const importFiles = async (files: File[]) => {
     setBusy(true)
     try {
-      const sorted = [...files].sort(
-        (a, b) => (a.name.endsWith('.json') ? -1 : 1) - (b.name.endsWith('.json') ? -1 : 1),
-      )
+      const sorted = [...files]
+        .filter((f) => /\.(safetensors|json|png)$/i.test(f.name))
+        .sort((a, b) => (a.name.endsWith('.json') ? -1 : 1) - (b.name.endsWith('.json') ? -1 : 1))
+      const errors: string[] = []
+      let imported = 0
       for (const file of sorted) {
-        const data = new FormData()
-        data.append('file', file)
-        const rel = file.webkitRelativePath
-        const dir = rel ? rel.split('/').slice(0, -1).join('/') : 'imported'
-        await refModRequest(`/api/refmods?folder=${encodeURIComponent(dir)}`, {
-          method: 'POST',
-          body: data,
-        })
+        try {
+          const data = new FormData()
+          data.append('file', file)
+          const rel = file.webkitRelativePath
+          const dir = rel ? rel.split('/').slice(0, -1).join('/') : 'imported'
+          await refModRequest(`/api/refmods?folder=${encodeURIComponent(dir)}`, {
+            method: 'POST',
+            body: data,
+          })
+          imported++
+        } catch (e) {
+          errors.push(`${file.name}: ${e instanceof Error ? e.message : String(e)}`)
+        }
       }
-      toast.success('Файлы импортированы')
+      if (imported) toast.success(`Импортировано файлов: ${imported}`)
+      if (errors.length)
+        toast.error(`Не импортировано: ${errors.length}. ${errors.slice(0, 3).join('; ')}`, {
+          duration: 12000,
+        })
+      if (!sorted.length) toast.error('В папке нет файлов RefMod')
       await refresh()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e))
@@ -570,6 +582,11 @@ export function RefModsView() {
                     </div>
                     <div className="p-3">
                       <p className="text-sm truncate">{entry.name}</p>
+                      <p className="text-xs text-muted-foreground line-clamp-2">
+                        {[...new Set(entry.members.map((m) => m.description).filter(Boolean))].join(
+                          ' · ',
+                        )}
+                      </p>
                       <p className="text-xs text-muted-foreground mt-1">
                         {entry.kind} · {entry.members.length} комп. ·{' '}
                         {entry.tokens.toLocaleString()} токенов
@@ -857,8 +874,22 @@ export function RefModsView() {
                       <div className="w-1/2 max-w-96">
                         {source.kind === 'image' ? (
                           <div className="relative w-fit mx-auto overflow-hidden">
-                            <img src={sourceUrl(project, source)} alt={source.name} className="max-h-64" />
-                            {source.crop && <div className="absolute border-2 border-amber-400 pointer-events-none shadow-[0_0_0_999px_#0006]" style={{left:`${source.crop.x*100}%`,top:`${source.crop.y*100}%`,width:`${source.crop.width*100}%`,height:`${source.crop.height*100}%`}} />}
+                            <img
+                              src={sourceUrl(project, source)}
+                              alt={source.name}
+                              className="max-h-64"
+                            />
+                            {source.crop && (
+                              <div
+                                className="absolute border-2 border-amber-400 pointer-events-none shadow-[0_0_0_999px_#0006]"
+                                style={{
+                                  left: `${source.crop.x * 100}%`,
+                                  top: `${source.crop.y * 100}%`,
+                                  width: `${source.crop.width * 100}%`,
+                                  height: `${source.crop.height * 100}%`,
+                                }}
+                              />
+                            )}
                           </div>
                         ) : source.kind === 'video' ? (
                           <video
@@ -964,19 +995,21 @@ export function RefModsView() {
                         <span>Обрезка, % изображения:</span>
                         {(['x', 'y', 'width', 'height'] as const).map((key) => (
                           <label key={key}>
-                            {{x:'Слева',y:'Сверху',width:'Ширина',height:'Высота'}[key]}{' '}
+                            {{ x: 'Слева', y: 'Сверху', width: 'Ширина', height: 'Высота' }[key]}{' '}
                             <input
                               className={`${input} w-20`}
                               type="number"
                               min={0}
                               max={100}
                               step={1}
-                              value={Math.round((source.crop || { x: 0, y: 0, width: 1, height: 1 })[key]*100)}
+                              value={Math.round(
+                                (source.crop || { x: 0, y: 0, width: 1, height: 1 })[key] * 100,
+                              )}
                               onChange={(e) =>
                                 editSource({
                                   crop: {
                                     ...(source.crop || { x: 0, y: 0, width: 1, height: 1 }),
-                                    [key]: Number(e.target.value)/100,
+                                    [key]: Number(e.target.value) / 100,
                                   },
                                 })
                               }

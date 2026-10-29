@@ -2,11 +2,11 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { useRefMods } from '@/lib/refmods/store'
 import { useGenStore } from '@/lib/gen-store'
+import { useControlNetTarget } from '@/lib/controlnet-target-store'
+import { studioReferenceLabels } from '@/lib/refmods/reference-map'
 import { referenceRestoreState } from '@/lib/refmods/remapping'
 import {
-  allowsRefModAudio,
   emptyRefModSet,
-  referenceLabels,
   remapReferenceTags,
   type RefModKind,
   type RefModTarget,
@@ -27,29 +27,54 @@ export function useRefModMentions(
   onChange?: (p: string) => void,
 ) {
   const saved = useRefMods((s) => s.sets[target])
+  const nativeExtension = useGenStore(s=>s.video.extendSourceVideoPath)
+  const control = useControlNetTarget()
   const key = JSON.stringify(raw)
+  useEffect(()=>{
+    const source=control.source
+    if(target!=='controlnet'||!source||control.params.controlType!=='direct'||source.hasAudio!==undefined)return
+    let disposed=false
+    const path=source.inputSource || [source.subfolder,source.filename].filter(Boolean).join('/')
+    void fetch('/api/refmods/references',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({references:[{id:'native-control-video',path,kind:'video',type:source.inputSource?'input':'output'}]})})
+      .then(r=>r.ok?r.json():null).then(data=>{
+        const current=useControlNetTarget.getState().source
+        if(!disposed&&data&&current?.filename===source.filename&&current?.inputSource===source.inputSource)
+          useControlNetTarget.getState().setSource({...current,hasAudio:data.references[0].hasAudio})
+      }).catch(()=>{})
+    return ()=>{disposed=true}
+  },[target,control.source,control.params.controlType])
   useEffect(() => {
     if (target !== 'generate') return
-    const references = raw.filter((r) => r.kind === 'video' && r.path && r.includeAudio && r.hasAudio === undefined)
+    const references = raw.filter(
+      (r) => r.kind === 'video' && r.path && r.includeAudio && r.hasAudio === undefined,
+    )
     if (!references.length) return
     let disposed = false
-    void fetch('/api/refmods/references', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({references}) })
-      .then((r) => r.ok ? r.json() : null)
+    void fetch('/api/refmods/references', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ references }),
+    })
+      .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (disposed || !data) return
         for (const ref of data.references) {
-          const current=useGenStore.getState().video.refs.find((r)=>r.id===ref.id)
-          if (current?.path===ref.path) useGenStore.getState().updateVideoRef(ref.id,{hasAudio:ref.hasAudio})
+          const current = useGenStore.getState().video.refs.find((r) => r.id === ref.id)
+          if (current?.path === ref.path)
+            useGenStore.getState().updateVideoRef(ref.id, { hasAudio: ref.hasAudio })
         }
-      }).catch(()=>{})
-    return () => { disposed=true }
+      })
+      .catch(() => {})
+    return () => {
+      disposed = true
+    }
   }, [key, target])
   const set = saved || emptyRefModSet()
   // Stable identities, not numeric positions, drive tag remapping.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const labels = useMemo(
-    () => referenceLabels(raw, set, allowsRefModAudio(target)),
-    [key, saved, target],
+    () => studioReferenceLabels(target, set, raw),
+    [key, saved, target, nativeExtension, control],
   )
   const previous = useRef<ReferenceLabel[] | null>(null)
   const restoreEpoch = useRef(referenceRestoreState().epoch)
