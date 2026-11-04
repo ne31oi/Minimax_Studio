@@ -21,7 +21,6 @@ import { selectedRefMods } from './refmods/store'
 
 export interface RefineTask {
   refMods?: import('./refmods/types').RefModSet
-  profile?: 'standard' | 'open-h3'
   mode: 'whole' | 'chunks'
   /** Оригинал из галереи (output), из которого делается рефайн. */
   source: { filename: string; subfolder: string }
@@ -201,7 +200,6 @@ async function runTask(id: string, task: RefineTask): Promise<void> {
     body: JSON.stringify({
       sourceFilename: task.source.filename,
       refMods: task.refMods,
-      profile: task.profile,
       sourceSubfolder: task.source.subfolder,
       ...(task.inputSource ? { inputSource: task.inputSource } : {}),
       // (правка 494) free-режим: сервер конвертирует Мп в короткую сторону

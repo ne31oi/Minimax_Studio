@@ -99,3 +99,11 @@ ${DIALOG}`
  * Оставлен для совместимости: раньше был единственным экспортом.
  */
 export const H3_OFFICIAL_PROMPT_SPEC = H3_SPEC_B
+
+// RefMods supply conditioning in text/keyframe and extension workflows too.
+const FORMAT_A_REFERENCES = FORMAT_A.replace(
+  'Метки <Picture N>/<Video N>/<Subject N> ЗАПРЕЩЕНЫ. <Audio N> — только если аудио-реф прикреплён.',
+  'Метки <Picture N>/<Video N>/<Audio N> разрешены только из текущей карты референсов. <Subject N> не используй: ссылайся на референсы непосредственно.',
+)
+export const H3_SPEC_A_REFERENCES = `${ROLE}\n${FORMAT_A_REFERENCES}\n${DETAIL}\n${FENCE}\n${DIALOG}`
+export const H3_SPEC_EXTEND_REFERENCES = `${ROLE}\n${FORMAT_A_REFERENCES}\n${DETAIL_ACTION}\n${FENCE}\n${DIALOG}`

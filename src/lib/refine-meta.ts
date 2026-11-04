@@ -74,7 +74,7 @@ const SECTION_RE = /^([a-z_]+):\s*/gm
  * Очистить промпт драфта для подачи в refine-conditioning.
  * Свободный текст без меток секций возвращается зачищенным от тегов как есть.
  */
-export function sanitizeDraftPrompt(raw: string): string {
+export function sanitizeDraftPrompt(raw: string, preserveTags: string[] = []): string {
   const text = (raw || '').replace(/\r\n?/g, '\n')
   if (!text.trim()) return ''
 
@@ -100,16 +100,16 @@ export function sanitizeDraftPrompt(raw: string): string {
     .filter((s) => s.trim())
 
   return kept
-    .map((s) => sanitizeFragment(s))
+    .map((s) => sanitizeFragment(s, preserveTags))
     .filter((s) => s.length > 0)
     .join('\n\n')
 }
 
 /** Зачистка одного фрагмента: теги <Video|Audio|Subject N> (правка 310;
  *  <Picture N> сохраняются), спикеры, префикс, лишние пробелы. */
-function sanitizeFragment(fragment: string): string {
+function sanitizeFragment(fragment: string, preserveTags: string[] = []): string {
   return fragment
-    .replace(REF_TAG_RE, '')
+    .replace(REF_TAG_RE, tag => preserveTags.includes(tag) ? tag : '')
     .replace(SUBJECT_TAG_RE, '')
     .replace(SPEAKER_RE, '')
     .replace(REF_MODE_PREFIX_RE, '')
@@ -219,8 +219,8 @@ export function readDraftPrompt(subfolder: string, filename: string): string | n
  * с промптом исходника). Каждая часть проходит sanitizeDraftPrompt; части
  * склеиваются разделителем '\n\n---\n\n'. Нет осмысленного текста → null.
  */
-export function promptChainFromMeta(meta: Record<string, unknown>): string | null {
-  const parts = promptChainPartsFromMeta(meta)
+export function promptChainFromMeta(meta: Record<string, unknown>, preserveTags: string[] = []): string | null {
+  const parts = promptChainPartsFromMeta(meta, preserveTags)
   if (parts.length === 0) return null
   const joined = parts.join('\n\n---\n\n')
   return hasMeaningfulText(joined) ? joined : null
@@ -233,11 +233,11 @@ export function promptChainFromMeta(meta: Record<string, unknown>): string | nul
  * схлопнуты. Нужна режиму «Частями», чтобы окно 0 получало ПЕРВЫЙ промпт
  * цепочки (он описывает начало видео), а не всю сумму сцен сразу.
  */
-export function promptChainPartsFromMeta(meta: Record<string, unknown>): string[] {
+export function promptChainPartsFromMeta(meta: Record<string, unknown>, preserveTags: string[] = []): string[] {
   const parts: string[] = []
   const push = (v: unknown) => {
     if (typeof v !== 'string' || !hasMeaningfulText(v)) return
-    const s = sanitizeDraftPrompt(v)
+    const s = sanitizeDraftPrompt(v, preserveTags)
     if (s && parts[parts.length - 1] !== s) parts.push(s)
   }
   push(meta.source_prompt)
@@ -249,13 +249,13 @@ export function promptChainPartsFromMeta(meta: Record<string, unknown>): string[
 }
 
 /** Части цепочки промптов из сайдкара исходника (см. promptChainPartsFromMeta). */
-export function readPromptChainParts(subfolder: string, filename: string): string[] | null {
+export function readPromptChainParts(subfolder: string, filename: string, preserveTags: string[] = []): string[] | null {
   const metaFile = resolveMetaFile(subfolder, filename)
   if (!metaFile) return null
 
   try {
     const raw = fs.readFileSync(metaFile, 'utf-8')
-    const parts = promptChainPartsFromMeta(JSON.parse(raw) as Record<string, unknown>)
+    const parts = promptChainPartsFromMeta(JSON.parse(raw) as Record<string, unknown>, preserveTags)
     return parts.length > 0 ? parts : null
   } catch {
     return null
@@ -360,14 +360,25 @@ export function resolveSourceLatent(
  * readDraftPrompt; для extend-combined возвращает весь путь
  * «исходник → клип 1 → … → клип N».
  */
-export function readPromptChain(subfolder: string, filename: string): string | null {
+export function readPromptChain(subfolder: string, filename: string, preserveTags: string[] = []): string | null {
   const metaFile = resolveMetaFile(subfolder, filename)
   if (!metaFile) return null
 
   try {
     const raw = fs.readFileSync(metaFile, 'utf-8')
-    return promptChainFromMeta(JSON.parse(raw) as Record<string, unknown>)
+    return promptChainFromMeta(JSON.parse(raw) as Record<string, unknown>, preserveTags)
   } catch {
     return null
   }
+}
+
+/** Read source RefMod metadata through the same output-directory boundary as prompts. */
+export function readRefModSourceMeta(subfolder: string, filename: string): Record<string, unknown> | null {
+  const file = resolveMetaFile(subfolder, filename)
+  if (!file) return null
+  try {
+    const meta = JSON.parse(fs.readFileSync(file, 'utf8'))
+    if (!meta || typeof meta !== 'object' || Array.isArray(meta)) return null
+    return meta.params && typeof meta.params === 'object' ? { ...meta, ...meta.params } : meta
+  } catch { return null }
 }

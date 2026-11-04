@@ -3,7 +3,7 @@ import { chainLatentCut } from './latent-cut' // (правка 392)
 import { clampVedaSparsity, sanitizeVedaIndexList, buildCustomLoraNodes, getLastLoraOutput } from './minimax-h3-template' // (правка 399; хелперы LoRA — правка 483)
 // (правка 723) Лестница сигм/пресет Pass 2 вынесены в отдельный модуль без импортов,
 // чтобы вкладка Refine могла их импортировать, не таща в клиентский бандл весь шаблон.
-import { OPEN_H3_SIGMAS, refineSigmaLadder } from './refine-sigmas'
+import { refineSigmaLadder } from './refine-sigmas'
 /**
  * Refine — генеративный v2v-апскейл готового видео (латентная схема Pass 2).
  *
@@ -60,6 +60,7 @@ import { OPEN_H3_SIGMAS, refineSigmaLadder } from './refine-sigmas'
  *   → [SparseAttn] → AttentionBackend (+ KJ live preview)
  */
 import { computeFinalDimensions, type FinalDimensions } from './minimax-h3-template'
+import { refineRefModPrompt, refineRefModCaptions, type RefineRefModBindings } from '../refmods/refine'
 
 /** Caption по умолчанию (из докa LMS-рецепта; нейтральный enhance). */
 export const DEFAULT_REFINE_PROMPT =
@@ -83,7 +84,7 @@ function firstFrameCaption(slot: number): string {
 // (клиентская вкладка Refine импортирует их оттуда же).
 
 export interface RefineParams {
-  openH3?: boolean
+  refModBindings?: RefineRefModBindings
   /** Имя файла исходника в ComfyUI input/ (уже скопирован роутом /api/comfy/refine). */
   sourceVideo: string
   /** (правка 376) Путь к сохранённому AV-латенту исходника, относительно
@@ -205,7 +206,7 @@ export function buildRefineWorkflow(p: RefineParams): Record<string, unknown> {
   // стартует с ~20% расписания, модель только дорисовывает детали; сэмплер
   // res_multistep. Полный ×2-рецепт: цель 'x2' + steps=2.
   const light = p.steps === 2
-  const ladder = p.openH3 ? OPEN_H3_SIGMAS : refineSigmaLadder(p.steps ?? 3, p.sigmaStart)
+  const ladder = refineSigmaLadder(p.steps ?? 3, p.sigmaStart)
   const basePrompt = (p.prompt ?? '').trim() || DEFAULT_REFINE_PROMPT
   // (правка 315) Слоты сохраняют нумерацию оригинальной генерации: мета-рефы
   // идут ПЕРВЫМИ — ref_image_0..k-1 → <Picture 1..k> (порядок массива =
@@ -216,13 +217,16 @@ export function buildRefineWorkflow(p: RefineParams): Record<string, unknown> {
   // сохранённые sanitizeDraftPrompt (правка 310), указывают на те же
   // изображения, что в оригинале. Без мета-рефов: первый кадр = <Picture 1>.
   const metaRefs = (p.refImages ?? []).slice(0, 8) // max 8 внешних + 1 первый кадр = 9 всего
-  let prompt = basePrompt
+  const rawImages = metaRefs.length + (p.sourceLatent ? 0 : 1)
+  let prompt = refineRefModPrompt(basePrompt, p.refModBindings, rawImages)
   if (metaRefs.length > 0) {
     prompt += `\n\n` + metaRefs.map((r, i) => metaRefCaption(i + 1, r.role)).join(' ')
-    prompt += `\n\n` + firstFrameCaption(metaRefs.length + 1)
-  } else {
+    if (!p.sourceLatent) prompt += `\n\n` + firstFrameCaption(metaRefs.length + 1)
+  } else if (!p.sourceLatent) {
     prompt += `\n\n` + firstFrameCaption(1)
   }
+  const savedCaptions = refineRefModCaptions(p.refModBindings, rawImages)
+  if (savedCaptions) prompt += `\n\n${savedCaptions}`
   // (правка 483) Триггерные слова пользовательских LoRA — в конец промпта
   const pSuffix = p.promptSuffix?.trim()
   if (pSuffix) prompt += ` ${pSuffix}`
@@ -797,7 +801,7 @@ export function buildRefineWorkflow(p: RefineParams): Record<string, unknown> {
  *  ffmpeg-стейдж (/api/comfy/refine/stitch) новым воркфлоу не вызывается.
  */
 export interface ChunkedRefineParams {
-  openH3?: boolean
+  refModBindings?: RefineRefModBindings
   sourceVideo: string
   /** (правка 382) Путь к сохранённому AV-латенту исходника (относительно
    *  output/, поле latent_file меты; роут валидировал и передал
@@ -923,7 +927,7 @@ export function buildChunkedRefineWorkflow(p: ChunkedRefineParams): Record<strin
   // Latent-цепочка + хвост предыдущего рендера обеспечивает непрерывность;
   // высокий σ даёт модели свободу для детализации.
   const light = p.steps === 2
-  const ladder = p.openH3 ? OPEN_H3_SIGMAS : refineSigmaLadder(p.steps ?? 3, p.sigmaStart)
+  const ladder = refineSigmaLadder(p.steps ?? 3, p.sigmaStart)
   const basePrompt = (p.prompt ?? '').trim() || DEFAULT_REFINE_PROMPT
   // (правка 315, заменяет раскладку правки 305) Якорь идентичности на ВСЕХ
   // окнах: слоты сохраняют нумерацию оригинальной генерации — мета-рефы
@@ -940,10 +944,11 @@ export function buildChunkedRefineWorkflow(p: ChunkedRefineParams): Record<strin
   const captions =
     (metaRefs.length > 0
       ? metaRefs.map((r, i) => metaRefCaption(i + 1, r.role)).join(' ') + '\n\n'
-      : '') + firstFrameCaption(metaRefs.length + 1)
+      : '') + (p.sourceLatent ? '' : firstFrameCaption(metaRefs.length + 1)) + '\n\n' +
+      refineRefModCaptions(p.refModBindings, metaRefs.length + (p.sourceLatent ? 0 : 1))
   // (правка 483) Триггерные слова пользовательских LoRA — суффикс промптов окон
   const pSuffix = p.promptSuffix?.trim() ? ` ${p.promptSuffix!.trim()}` : ''
-  const promptFirst = basePrompt + `\n\n` + captions + pSuffix
+  const promptFirst = refineRefModPrompt(basePrompt, p.refModBindings, metaRefs.length + (p.sourceLatent ? 0 : 1)) + `\n\n` + captions + pSuffix
   // Сюжетный промпт — только окну 0 (оно покрывает начало видео, которое
   // первый промпт цепочки и описывает). Окна 1+ получают ТОЛЬКО якорные
   // подписи референсов: промпт цепочки описывает сцены, которых в этих

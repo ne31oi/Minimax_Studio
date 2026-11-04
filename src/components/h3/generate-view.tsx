@@ -12,6 +12,8 @@ import { useRefModMentions } from '@/hooks/use-refmod-mentions'
 import { selectedRefMods } from '@/lib/refmods/store'
 import { emptyRefModSet, refModTokens } from '@/lib/refmods/types'
 import { studioReferenceLabels } from '@/lib/refmods/reference-map'
+import { RefModPickerButton } from './refmod-picker-button'
+import { RefModReferenceCards } from './refmod-reference-cards'
 import { createPortal } from 'react-dom'
 import { motion } from 'framer-motion'
 import {
@@ -1427,6 +1429,7 @@ export function GenerateView() {
                 </span>
               </Label>
 
+              <RefModPickerButton target="generate" className="w-full" />
               <div
                 onDragOver={(e) => { e.preventDefault(); setRefsDragOver(true) }}
                 onDragLeave={() => setRefsDragOver(false)}
@@ -1500,6 +1503,8 @@ export function GenerateView() {
           )}
 
           <Separator className="bg-border opacity-50" />
+
+          <RefModReferenceCards />
 
           {/* Collapsible: Additional parameters */}
           <div className="space-y-2">

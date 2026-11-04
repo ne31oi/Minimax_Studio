@@ -44,6 +44,10 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { getClipboardImageFiles, hasClipboardImage } from '@/lib/paste-utils'
 import { useGenStore } from '@/lib/gen-store'
+import { useRefMods } from '@/lib/refmods/store'
+import { emptyRefModSet } from '@/lib/refmods/types'
+import { studioReferenceLabels } from '@/lib/refmods/reference-map'
+import { assistantClipLabels, remapAssistantReferences, MISSING_ASSISTANT_REFERENCE } from '@/lib/refmods/assistant-references'
 import { useAssistantChats, type AssistantChatMessage, type AssistantChatMode } from '@/lib/assistant-chats-store'
 import { useControlNetTarget } from '@/lib/controlnet-target-store' // (правка 502)
 import {
@@ -99,6 +103,12 @@ function llmDisplayName(modelId?: string | null, modelName?: string | null): str
     return modelName
   }
   return 'Qwen3.5 9B (по умолчанию)'
+}
+
+function referencesAvailable(content: string): boolean {
+  if (!content.includes(MISSING_ASSISTANT_REFERENCE)) return true
+  toast.error('Референс из ответа больше не выбран. Верните его в набор или попросите ассистента обновить промпт.')
+  return false
 }
 
 export function AssistantView({
@@ -198,13 +208,32 @@ export function AssistantView({
   // Ярлык быстрой кнопки ControlNet-чата: «Исправить» имеет смысл только
   // когда в поле вкладки уже есть промпт; иначе предлагаем придумать с нуля.
   const controlnetHasPrompt = useControlNetTarget((s) => s.prompt.trim().length > 0)
+  const refModSet = useRefMods(s => s.sets[activeChatMode])
+  const referenceVideo = useGenStore(s => s.video)
+  const controlTarget = useControlNetTarget()
+  const referenceLabels = useMemo(
+    () => studioReferenceLabels(activeChatMode, refModSet || emptyRefModSet()),
+    [activeChatMode, refModSet, referenceVideo, controlTarget],
+  )
 
   /** Build a preview URL for a reference by (kind, 1-based index).
    *  (правка 427) В extend-чате <Picture N> — это extendImageRefs вкладки
    *  «Продление», а не refs вкладки «Генерация».
    *  (правка 502) В controlnet-чате — refImages вкладки «ControlNet». */
   const previewFor = useCallback(
-    (kind: 'image' | 'video', index: number): { url?: string; label?: string; path?: string } => {
+    (kind: 'image' | 'video', index: number, clip = 1): { url?: string; label?: string; path?: string } => {
+      const mapped = assistantClipLabels(referenceLabels, clip).find(l => l.trigger === `<${kind === 'image' ? 'Picture' : 'Video'} ${index}>`)
+      if (mapped && /:\d+:\d+$/.test(mapped.id)) {
+        // A bundle cover does not represent the saved video or every mixed member.
+        const item = refModSet?.items.find(item => mapped.id.startsWith(`${item.id}:`))
+        return { label: mapped.label, url: kind === 'image' && item?.members.filter(m => m.kind !== 'audio').length === 1 ? mapped.previewUrl : undefined }
+      }
+      if (mapped?.id.startsWith('native-')) return { label: mapped.label }
+      if (mapped?.id.startsWith('frame-')) {
+        const r = mapped.id === 'frame-0' ? referenceVideo.startFrame : referenceVideo.endFrame
+        return r ? { label: r.name, url: r.previewUrl || `/api/comfy/file?filename=${encodeURIComponent(r.path)}&type=input`, path: r.path } : {}
+      }
+      if (!mapped && refModSet?.items.length) return {}
       // (правка 502) ControlNet: только картинки (refImages без поля kind).
       if (isControlNetChat) {
         if (kind !== 'image') return {}
@@ -224,7 +253,7 @@ export function AssistantView({
         (r.path ? `/api/comfy/file?filename=${encodeURIComponent(r.path)}&type=input` : undefined)
       return { url, label: r.name, path: r.path }
     },
-    [refs, extendRefs, controlnetRefs, isExtendChat, isControlNetChat],
+    [refs, extendRefs, controlnetRefs, isExtendChat, isControlNetChat, referenceLabels, refModSet, referenceVideo],
   )
 
   /**
@@ -344,7 +373,7 @@ export function AssistantView({
                       </button>
                     </div>
                     <div className="leading-relaxed whitespace-pre-wrap break-words text-foreground/95">
-                      {renderHighlightedParts(prompt)}
+                      {renderHighlightedParts(prompt, clipMarker ?? 1)}
                       {fenceStreaming && (
                         <span className="inline-block w-[7px] h-[14px] align-middle ml-0.5 bg-cyan-400/80 animate-pulse" />
                       )}
@@ -365,7 +394,7 @@ export function AssistantView({
       // No fence — render the whole text as markdown.
       return <MarkdownText text={rawText} previewFor={previewFor} onRefClick={openRefByTag} />
 
-      function renderHighlightedParts(text: string): React.ReactNode[] {
+      function renderHighlightedParts(text: string, clip = 1): React.ReactNode[] {
         const parts = text.split(/(<(?:Picture|Video|Audio) \d+>|<d>[\s\S]*?<\/d>)/g)
         return parts.map((p, i) => {
           if (!p) return null
@@ -373,7 +402,7 @@ export function AssistantView({
           if (m) {
             const kind = m[1] === 'Picture' ? 'image' : 'video'
             const index = parseInt(m[2], 10)
-            const { url, label } = previewFor(kind, index)
+            const { url, label } = previewFor(kind, index, clip)
             const cls =
               kind === 'video'
                 ? 'bg-cyan-500/15 text-cyan-300'
@@ -487,7 +516,9 @@ export function AssistantView({
   const activeChat = chats.find((c) => c.id === activeId) ?? null
   /** Сообщения выведены РЕАКТИВНО из персист-стора: ответ, закоммиченный
    *  движком, пока мы были на другой вкладке, появляется здесь сам. */
-  const messages = activeChat?.messages ?? []
+  const messages = useMemo(() => (activeChat?.messages ?? []).map(m => m.referenceLabels
+    ? { ...m, content: remapAssistantReferences(m.content, m.referenceLabels, referenceLabels) }
+    : m), [activeChat?.messages, referenceLabels])
   // Стабильные ключи (index сдвигается при обрезке >200 сообщений и
   // ре-анимирует все пузыри); одинаковые сообщения различаем счётчиком.
   const messageKeys = useMemo(() => {
@@ -774,6 +805,7 @@ export function AssistantView({
    *  содержательный абзац; всегда с обрезкой по закрывающему fence, без
    *  хвоста модели и декоративных кавычек. */
   const insertIntoPrompt = useCallback((content: string) => {
+    if (!referencesAvailable(content)) return
     const clean = extractInsertablePrompt(content)
     if (!clean) return
     useGenStore.getState().setVideoPrompt(clean)
@@ -790,6 +822,7 @@ export function AssistantView({
   /** (правка 502) Вставка fence-промпта controlnet-чата в поле промпта
    *  вкладки «ControlNet» (controlnet-target-store) + переход на вкладку. */
   const insertIntoControlNetPrompt = useCallback((content: string) => {
+    if (!referencesAvailable(content)) return
     const clean = extractInsertablePrompt(content)
     if (!clean) return
     useControlNetTarget.getState().setPrompt(clean)
@@ -804,6 +837,7 @@ export function AssistantView({
    *  редактирование в extend-view; release LLM и переход на вкладку
    *  «Продление» — как у «В промпт» (правка 161). */
   const insertIntoClip = useCallback((fenceContent: string, clipNumber: number) => {
+    if (!referencesAvailable(fenceContent)) return
     const clean = stripClipMarker(fenceContent).trim()
     if (!clean) return
     const st = useGenStore.getState()
@@ -825,6 +859,7 @@ export function AssistantView({
    *  вместо россыпи кнопок «В клип N» показываем ОДНУ «Вставить все (N)».
    *  Все правки применяются к одной копии массива и одним patchVideo. */
   const insertAllIntoClips = useCallback((pairs: Array<{ content: string; clip: number }>) => {
+    if (pairs.some(p => !referencesAvailable(p.content))) return
     const st = useGenStore.getState()
     const clips = [...st.video.extendClips]
     let applied = 0

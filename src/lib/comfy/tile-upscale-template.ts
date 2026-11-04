@@ -1,5 +1,4 @@
 import { vhsEncodeInputs, type VideoFormatSettings } from '../video-format' // (правка 386)
-import { OPEN_H3_SIGMAS } from './refine-sigmas'
 /**
  * Tile Upscale — латентный tiled-апскейл готового видео
  * (MMH3UltimateUpscale — монолитная нода: temporal chunks → latent upscale →
@@ -34,7 +33,6 @@ export const DEFAULT_TILE_UPSCALE_PROMPT =
   'Enhance this video with sharp, crisp details while preserving a natural photorealistic appearance.'
 
 export interface TileUpscaleParams {
-  openH3?: boolean
   /** Имя файла в ComfyUI input/ (уже скопирован роутом). */
   sourceVideo: string
   /** (правка 381) Путь к сохранённому AV-латенту исходника (относительно
@@ -510,15 +508,11 @@ export function buildTileUpscaleWorkflow(p: TileUpscaleParams): Record<string, u
       _meta: { title: 'Random Noise' },
     },
     'tu_sampler': {
-      inputs: { sampler_name: p.openH3 ? 'euler' : 'res_multistep' },
+      inputs: { sampler_name: 'res_multistep' },
       class_type: 'KSamplerSelect',
       _meta: { title: 'Sampler (res_multistep)' },
     },
-    'tu_sigmas': p.openH3 ? {
-      inputs: { sigmas: OPEN_H3_SIGMAS },
-      class_type: 'ManualSigmas',
-      _meta: { title: 'Open H3 sigmas (3 steps)' },
-    } : {
+    'tu_sigmas': {
       inputs: {
         scheduler: 'simple',
         steps: p.steps ?? 2,

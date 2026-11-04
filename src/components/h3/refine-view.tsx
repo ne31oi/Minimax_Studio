@@ -67,6 +67,11 @@ import {
 } from '@/lib/comfy/refine-sigmas'
 import { useVideoGallery } from '@/components/h3/use-video-gallery'
 import { useRefineTarget, type RefineSource } from '@/lib/refine-target-store'
+import { useRefMods } from '@/lib/refmods/store'
+import { validateRefModSet } from '@/lib/refmods/workflow'
+import { emptyRefModSet } from '@/lib/refmods/types'
+import { RefModReferenceCards } from './refmod-reference-cards'
+import { RefModPickerButton } from './refmod-picker-button'
 import {
   enqueueRefine,
   cancelActiveRefines,
@@ -100,7 +105,7 @@ export function RefineView() {
 
   const params = useRefineTarget((s) => s.params)
   const patchParams = useRefineTarget((s) => s.patchParams)
-  const { target, steps, strength, mode, chunkSec, refDetail, targetMp, profile } = params
+  const { target, steps, strength, mode, chunkSec, refDetail, targetMp } = params
 
   // (правка 509) Промпт — в сторе (переживает переключение вкладок);
   // вводится вручную для источников с диска (у них нет .meta.json).
@@ -124,12 +129,20 @@ export function RefineView() {
   type MetaRef = { path: string; role: string }
   const [metaRefs, setMetaRefs] = useState<MetaRef[] | null>(null)
   const [metaLoading, setMetaLoading] = useState(false)
+  const [metaError, setMetaError] = useState<string | null>(null)
   // (правка 377) Наличие латента у источника: true → lossless-путь
   // (refine стартует с первозданного латента, без h264+VAE-потерь).
   const [latentOk, setLatentOk] = useState(false)
+  const inheritedRefMods = useRef<ReturnType<typeof emptyRefModSet> | null>(null)
   useEffect(() => {
     setMetaRefs(null)
     setLatentOk(false)
+    setMetaLoading(false)
+    setMetaError(null)
+    if (inheritedRefMods.current && useRefMods.getState().sets.refine === inheritedRefMods.current) {
+      useRefMods.getState().set('refine', emptyRefModSet())
+    }
+    inheritedRefMods.current = null
     if (!source || source.inputSource || !source.filename) return
     const sub = source.subfolder ?? ''
     const p = sub ? `${sub}/${source.filename}` : source.filename
@@ -144,11 +157,17 @@ export function RefineView() {
           generation_mode?: string
           first_frame?: string | null
           latent_available?: boolean // (правка 377)
+          refMods?: unknown
         }
       })
       .then((meta) => {
         if (cancelled) return
         setLatentOk(meta?.latent_available === true)
+        if (meta && Object.hasOwn(meta, 'refMods')) {
+          const restored = validateRefModSet(meta.refMods)
+          useRefMods.getState().set('refine', restored)
+          inheritedRefMods.current = restored
+        }
         const list = Array.isArray(meta?.references) ? meta!.references!
           : Array.isArray(meta?.minimax_h3_references) ? meta!.minimax_h3_references!
           : []
@@ -169,7 +188,12 @@ export function RefineView() {
         // Порядок = порядок слотов <Picture 1..k> (см. правку 315 в refine-template.ts)
         setMetaRefs(imgRefs)
       })
-      .catch(() => { if (!cancelled) setMetaRefs([]) })
+      .catch((error) => {
+        if (!cancelled) {
+          setMetaRefs([])
+          setMetaError(error instanceof Error ? error.message : String(error))
+        }
+      })
       .finally(() => { if (!cancelled) setMetaLoading(false) })
     return () => { cancelled = true }
   }, [source])
@@ -346,13 +370,20 @@ export function RefineView() {
       toast.error('Видео ещё загружается — дождитесь завершения')
       return
     }
+    if (!src.inputSource && (metaLoading || metaRefs === null)) {
+      toast.info('Дождитесь загрузки референсов исходного видео')
+      return
+    }
+    if (metaError) {
+      toast.error('Не удалось загрузить референсы исходника', { description: metaError })
+      return
+    }
     if (Date.now() - lastSubmitAtRef.current < 1000) return // (правка 333)
     lastSubmitAtRef.current = Date.now()
     setLastDone(null)
     setLastError(null)
 
     const task = {
-      profile,
       mode: mode as 'whole' | 'chunks',
       source: { filename: src.filename, subfolder: src.subfolder ?? '' },
       ...(src.inputSource ? { inputSource: src.inputSource } : {}),
@@ -388,7 +419,7 @@ export function RefineView() {
     }
     enqueueRefine(task)
     toast.info(`Refine поставлен в очередь: ${src.filename}`)
-  }, [mode, target, targetMp, steps, strength, prompt, chunkSec, uploadingSrc, refDetail, userRefs, profile])
+  }, [mode, target, targetMp, steps, strength, prompt, chunkSec, uploadingSrc, refDetail, userRefs, metaLoading, metaRefs, metaError])
 
   const cancel = useCallback(async () => {
     await cancelActiveRefines()
@@ -693,6 +724,18 @@ export function RefineView() {
             </div>
           )}
 
+          {source && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs text-muted-foreground">RefMods для Refine</Label>
+                <RefModPickerButton target="refine" />
+              </div>
+              <RefModReferenceCards target="refine" rawImageCount={source.inputSource ? userRefs.length + 1 : (metaRefs?.length || 0) + (latentOk ? 0 : 1)} showLabels={!!source.inputSource} />
+              <p className="text-[10px] text-muted-foreground">Визуальные компоненты действуют во всех окнах. Звук сохраняется из исходного видео.</p>
+              {metaError && <p className="text-[10px] text-red-400">Не удалось загрузить референсы: {metaError}</p>}
+            </div>
+          )}
+
           {/* (правка 275) Референсы, которые реально подадутся в рефайн:
               картинки из меты исходника (слоты <Picture 1..k>) + первый кадр
               последним. Превью — из ComfyUI input/ через /api/comfy/file
@@ -789,14 +832,13 @@ export function RefineView() {
             >
               Целевое разрешение
             </Label>
-            <Select value={target} onValueChange={(v) => patchParams({ target: v as 'same' | '720' | '1080' | '1440' | 'free' })}>
+            <Select value={target} onValueChange={(v) => patchParams({ target: v as 'same' | '720' | '1080' | 'free' })}>
               <SelectTrigger className="w-full h-9 bg-[var(--surface-2)] border-border text-sm rounded-md">
                 <SelectValue placeholder="Разрешение" />
               </SelectTrigger>
               <SelectContent className="bg-[var(--surface-3)] border-border">
                 <SelectItem value="720">720p (быстрее, безопаснее по VRAM)</SelectItem>
-                <SelectItem value="1080">1080p (медленнее)</SelectItem>
-                <SelectItem value="1440">1440p (2K, требует больше памяти)</SelectItem>
+                <SelectItem value="1080">1080p (медленнее, максимум детализации)</SelectItem>
                 <SelectItem value="free">Свободное (в Мп, до 4K)</SelectItem>
                 <SelectItem value="same">Как в исходнике (только детализация)</SelectItem>
               </SelectContent>
@@ -878,20 +920,6 @@ export function RefineView() {
               </div>
             )}
           </div>
-
-          <div className="space-y-2">
-            <Label className="text-xs text-muted-foreground font-medium">Режим обработки</Label>
-            <Select value={profile} onValueChange={(v) => patchParams({ profile: v as 'standard' | 'open-h3' })}>
-              <SelectTrigger className="w-full h-9 bg-[var(--surface-2)] border-border text-sm rounded-md"><SelectValue /></SelectTrigger>
-              <SelectContent className="bg-[var(--surface-3)] border-border">
-                <SelectItem value="standard">Обычный Refine</SelectItem>
-                <SelectItem value="open-h3">Open H3 · Kijai (эксперимент)</SelectItem>
-              </SelectContent>
-            </Select>
-            {profile === 'open-h3' && <p className="text-xs text-muted-foreground">3 шага, Refiner Kijai + Turbo v1.2 + Sharp на FL2VA INT8. Экспериментальный вариант Open H3 для ComfyUI; результат может отличаться от полного рецепта NVIDIA.</p>}
-          </div>
-
-          {profile === 'standard' && <>
           {/* Профиль прохода (сигма-лестница Pass 2 генерации) */}
           <div className="space-y-2">
             <Label
@@ -975,7 +1003,6 @@ export function RefineView() {
             </div>
           </div>
 
-          </>}
           {/* Запуск (правка 261): можно ставить в очередь, пока идёт задача */}
           <div className="flex gap-2 pt-1">
             <Button

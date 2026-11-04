@@ -49,6 +49,8 @@ import { MentionTextarea, type MentionItem } from './mention-textarea'
 import { useRefModMentions } from '@/hooks/use-refmod-mentions'
 import { remapReferenceTags, type ReferenceLabel } from '@/lib/refmods/types'
 import { referenceRestoreState } from '@/lib/refmods/remapping'
+import { selectedRefMods } from '@/lib/refmods/store'
+import { refModTokens } from '@/lib/refmods/types'
 import { useVideoGallery } from './use-video-gallery'
 import { isStreamActive } from '@/lib/assistant-stream'
 import { useExtendTarget } from '@/lib/extend-target-store' // (правка 370) цель «Продлить» из галереи
@@ -514,9 +516,11 @@ export function ExtendView() {
     const CAMERA_LOCK =
       'You are continuing the reference video <Video 1>: keep the exact same scene, location, environment, lighting and time of day as shown in <Video 1>; the same characters with the same appearance and clothing. Continue exactly the same camera angle, framing and camera movement as the reference video; keep the same subject position and shot. Do not change the location, do not introduce a new setting or new characters, do not cut to a new shot.'
     const hasSourceVideo = !!v.extendSourceVideoPath
+    // The native graph supplies Picture anchors. Video 1 can belong to a RefMod.
+    const refModsActive = refModTokens(selectedRefMods('extend')) > 0
     const clips = v.extendClips.map((c) => {
       let prompt = c.prompt.trim()
-      if (hasSourceVideo && prompt) {
+      if (hasSourceVideo && prompt && !refModsActive) {
         if (!/<Video 1>/i.test(prompt)) {
           prompt = `<Video 1> ${prompt}`
         }

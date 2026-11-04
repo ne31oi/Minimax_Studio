@@ -1,7 +1,15 @@
 'use client'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { ChevronDownIcon, ChevronUpIcon, LibraryIcon, PlusIcon, Trash2Icon } from 'lucide-react'
+import { ChevronDownIcon, ChevronUpIcon, LibraryIcon, Trash2Icon } from 'lucide-react'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { useRefMods } from '@/lib/refmods/store'
 import { useGenStore } from '@/lib/gen-store'
 import { useControlNetTarget } from '@/lib/controlnet-target-store'
@@ -21,6 +29,7 @@ import {
 import { refModRequest } from '@/lib/refmods/client-jobs'
 import { RefModReferenceBudget } from './refmods-reference-budget'
 import { refModCurveValue } from '@/lib/refmods/curves'
+import { RefModLibrary } from './refmod-picker-button'
 export const refModInput =
   'rounded-md border border-border bg-background px-2 py-1.5 text-xs min-w-0'
 export const refModButton =
@@ -126,16 +135,29 @@ export function RefModCurveEditor({
   )
 }
 export function RefModsPanel({ target }: { target: RefModTarget }) {
-  useGenStore(s=>s.video)
+  useGenStore((s) => s.video)
   useControlNetTarget()
   const store = useRefMods()
   const set = store.sets[target] || emptyRefModSet()
-  const labels=['generate','extend','controlnet'].includes(target) ? studioReferenceLabels(target,set) : []
+  const labels = ['generate', 'extend', 'controlnet'].includes(target)
+    ? studioReferenceLabels(target, set)
+    : []
   const audio = allowsRefModAudio(target)
   const [open, setOpen] = useState(false)
   const [entries, setEntries] = useState<RefModEntry[]>([])
-  const [pick, setPick] = useState('')
+  const [view, setView] = useState<'selected' | 'library'>('selected')
   const [presetName, setPresetName] = useState('')
+  useEffect(() => {
+    const showDialog = (event: Event) => {
+      const detail = (event as CustomEvent<{ target: RefModTarget; view: 'selected' | 'library' }>)
+        .detail
+      if (detail?.target !== target) return
+      setView(detail.view || 'selected')
+      setOpen(true)
+    }
+    window.addEventListener('h3:open-refmods', showDialog)
+    return () => window.removeEventListener('h3:open-refmods', showDialog)
+  }, [target])
   useEffect(() => {
     if (!open) return
     void refModRequest<{ entries: RefModEntry[] }>('/api/refmods')
@@ -150,362 +172,408 @@ export function RefModsPanel({ target }: { target: RefModTarget }) {
       new CustomEvent('h3:refmod-set-changed', { detail: { target, before: set, after: value } }),
     )
   }
-  const choices = useMemo(
-    () => entries.filter((e) => audio || e.members.some((m) => m.kind !== 'audio')),
-    [entries, audio],
-  )
   return (
     <section className="shrink-0 border-b border-border bg-[var(--surface-1)] text-foreground">
       <button
-        className="w-full flex items-center gap-2 px-5 py-2 text-xs text-left"
-        onClick={() => setOpen(!open)}
+        className="w-full flex items-center gap-2 px-5 py-2 text-xs text-left hover:bg-accent/30"
+        aria-label="Настроить RefMods"
+        onClick={() => {
+          setView(set.items.length ? 'selected' : 'library')
+          setOpen(true)
+        }}
       >
         <LibraryIcon className="w-4 h-4 text-amber-400" />
-        <span>Используемые RefMods</span>
+        <span>RefMods · {set.items.length}</span>
         <span className="text-muted-foreground">
           {targetNames[target]} · {active} компонентов · {tokens.toLocaleString()} /{' '}
           {set.maxTokens.toLocaleString()} токенов
         </span>
         {tokens > set.maxTokens && <span className="text-red-400">Бюджет превышен</span>}
-        <ChevronDownIcon className="ml-auto w-4 h-4" />
+        <span className="ml-auto text-amber-300">Настроить</span>
       </button>
-      {open && (
-        <div className="px-5 pb-3 space-y-3 max-h-[45vh] overflow-y-auto">
-          <div className="flex flex-wrap gap-2">
-            <select
-              aria-label="Добавить RefMod"
-              className={`${refModInput} flex-1`}
-              value={pick}
-              onChange={(e) => setPick(e.target.value)}
-            >
-              <option value="">Выберите из библиотеки…</option>
-              {choices.map((e) => (
-                <option key={e.id} value={e.id}>
-                  {e.name} · {e.tokens} токенов
-                </option>
-              ))}
-            </select>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="sm:max-w-4xl max-h-[90vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>RefMods · {targetNames[target]}</DialogTitle>
+            <DialogDescription>
+              Выбор готовых комплектов и настройки их применения. Изменения сохраняются сразу.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-wrap items-center gap-2 border-b border-border pb-3">
             <button
-              className={refModButton}
-              disabled={!pick || set.items.length >= 8}
-              onClick={() => {
-                const e = entries.find((e) => e.id === pick)
-                if (e) {
-                  const before = set
-                  store.add(target, e)
-                  const after = useRefMods.getState().sets[target]!
-                  window.dispatchEvent(
-                    new CustomEvent('h3:refmod-set-changed', { detail: { target, before, after } }),
-                  )
-                  setPick('')
-                }
-              }}
+              type="button"
+              aria-pressed={view === 'selected'}
+              className={`${refModButton} ${view === 'selected' ? 'border-amber-400 text-amber-300' : ''}`}
+              onClick={() => setView('selected')}
             >
-              <PlusIcon className="w-4 h-4" />
+              Выбранные ({set.items.length})
             </button>
             <button
-              className={refModButton}
-              onClick={() => window.dispatchEvent(new Event('h3:goto-refmods'))}
+              type="button"
+              aria-pressed={view === 'library'}
+              className={`${refModButton} ${view === 'library' ? 'border-amber-400 text-amber-300' : ''}`}
+              onClick={() => setView('library')}
             >
-              Мастерская
+              Библиотека
             </button>
+            <span className="ml-auto text-xs text-muted-foreground">
+              {tokens.toLocaleString()} / {set.maxTokens.toLocaleString()} токенов
+            </span>
           </div>
-          {!audio && (
-            <p className="text-xs text-muted-foreground">
-              Исходный звук сохраняется. Аудиокомпоненты RefMods в этом разделе неактивны.
-            </p>
-          )}
-          {set.items.map((item, index) => (
-            <div key={item.id} className="border border-border rounded-lg p-2 space-y-2">
-              <div className="flex items-center gap-2">
-                <input
-                  aria-label={`Использовать ${item.name}`}
-                  type="checkbox"
-                  checked={item.enabled}
-                  onChange={(e) =>
-                    update({
-                      ...set,
-                      items: set.items.map((i) =>
-                        i.id === item.id ? { ...i, enabled: e.target.checked } : i,
-                      ),
-                    })
-                  }
-                />
-                <span className="text-xs flex-1 truncate">{item.name}</span>
-                <button
-                  title="Обновить файл и состав"
-                  className={refModButton}
-                  onClick={() => {
-                    const fresh = entries.find((e) => e.id === item.entryId)
-                    if (!fresh) return toast.error('Файл отсутствует в библиотеке')
-                    update({
-                      ...set,
-                      items: set.items.map((i) =>
-                        i.id === item.id
-                          ? { ...i, fingerprint: fresh.fingerprint, members: fresh.members }
-                          : i,
-                      ),
-                    })
-                  }}
-                >
-                  Обновить
-                </button>
-                {[index - 1, index + 1].map((to, n) => (
+          <div className="min-h-0 overflow-y-auto pr-1">
+            {view === 'library' ? (
+              <RefModLibrary target={target} onAdded={() => setView('selected')} />
+            ) : (
+              <div className="space-y-3">
+                <div className="flex flex-wrap gap-2">
+                  <button type="button" className={refModButton} onClick={() => setView('library')}>
+                    Добавить из библиотеки
+                  </button>
                   <button
-                    key={n}
-                    aria-label={n ? 'Переместить вниз' : 'Переместить вверх'}
-                    disabled={to < 0 || to >= set.items.length}
                     className={refModButton}
                     onClick={() => {
-                      const items = [...set.items]
-                      items.splice(to, 0, items.splice(index, 1)[0])
-                      update({ ...set, items })
+                      setOpen(false)
+                      window.dispatchEvent(new Event('h3:goto-refmods'))
                     }}
                   >
-                    {n ? (
-                      <ChevronDownIcon className="w-3 h-3" />
-                    ) : (
-                      <ChevronUpIcon className="w-3 h-3" />
-                    )}
+                    Мастерская
                   </button>
-                ))}
-                <button
-                  aria-label={`Убрать ${item.name}`}
-                  className={refModButton}
-                  onClick={() =>
-                    update({ ...set, items: set.items.filter((i) => i.id !== item.id) })
-                  }
-                >
-                  <Trash2Icon className="w-3 h-3" />
-                </button>
-              </div>
-              <div className="flex flex-wrap items-center gap-3 text-xs">
-                {(['strength', 'visualStrength', 'audioStrength'] as const).map((key, k) => (
-                  <label key={key} className="flex items-center gap-1 text-muted-foreground">
-                    {['Сила', 'Визуал', 'Аудио'][k]}
-                    <input
-                      type="number"
-                      aria-label={`${item.name}: ${key}`}
-                      className={`${refModInput} w-16`}
-                      disabled={key === 'audioStrength' && !audio}
-                      min={0}
-                      max={1}
-                      step={0.05}
-                      value={item[key]}
-                      onChange={(e) =>
-                        update({
-                          ...set,
-                          items: set.items.map((i) =>
-                            i.id === item.id
-                              ? { ...i, [key]: Math.min(1, Math.max(0, Number(e.target.value))) }
-                              : i,
-                          ),
-                        })
-                      }
-                    />
-                  </label>
-                ))}
-                <label>
-                  Копии{' '}
-                  <input
-                    aria-label={`${item.name}: копии`}
-                    className={`${refModInput} w-14`}
-                    type="number"
-                    min={1}
-                    max={8}
-                    value={item.copies}
-                    onChange={(e) =>
-                      update({
-                        ...set,
-                        items: set.items.map((i) =>
-                          i.id === item.id
-                            ? {
-                                ...i,
-                                copies: Math.max(
-                                  1,
-                                  Math.min(8, Math.round(Number(e.target.value))),
-                                ),
-                              }
-                            : i,
-                        ),
-                      })
-                    }
-                  />
-                </label>
-                <select
-                  aria-label={`${item.name}: состав`}
-                  className={refModInput}
-                  value={item.components}
-                  onChange={(e) =>
-                    update({
-                      ...set,
-                      items: set.items.map((i) =>
-                        i.id === item.id
-                          ? { ...i, components: e.target.value as typeof i.components }
-                          : i,
-                      ),
-                    })
-                  }
-                >
-                  <option value="All">Все компоненты</option>
-                  <option value="Visual">Визуальные</option>
-                  <option value="Audio" disabled={!audio}>
-                    Аудио
-                  </option>
-                </select>
-              </div>
-              <details className="text-xs text-muted-foreground">
-                <summary>Компоненты ({item.members.length})</summary>
-                <div className="flex flex-wrap gap-3 pt-2">
-                  {item.members.map((m) => (
-                    <label key={m.index} className="flex gap-1 items-center">
+                </div>
+                {!set.items.length && (
+                  <p className="py-6 text-sm text-center text-muted-foreground">
+                    Выберите готовый RefMod в библиотеке.
+                  </p>
+                )}
+                {!audio && (
+                  <p className="text-xs text-muted-foreground">
+                    Исходный звук сохраняется. Аудиокомпоненты RefMods в этом разделе неактивны.
+                  </p>
+                )}
+                {set.items.map((item, index) => (
+                  <div key={item.id} className="border border-border rounded-lg p-2 space-y-2">
+                    <div className="flex items-center gap-2">
                       <input
+                        aria-label={`Использовать ${item.name}`}
                         type="checkbox"
-                        disabled={m.kind === 'audio' && !audio}
-                        checked={!item.memberIndices || item.memberIndices.includes(m.index)}
-                        onChange={(e) => {
-                          const indices = item.memberIndices || item.members.map((x) => x.index)
+                        checked={item.enabled}
+                        onChange={(e) =>
+                          update({
+                            ...set,
+                            items: set.items.map((i) =>
+                              i.id === item.id ? { ...i, enabled: e.target.checked } : i,
+                            ),
+                          })
+                        }
+                      />
+                      <span className="text-xs flex-1 truncate">{item.name}</span>
+                      <button
+                        title="Обновить файл и состав"
+                        className={refModButton}
+                        onClick={() => {
+                          const fresh = entries.find((e) => e.id === item.entryId)
+                          if (!fresh) return toast.error('Файл отсутствует в библиотеке')
                           update({
                             ...set,
                             items: set.items.map((i) =>
                               i.id === item.id
-                                ? {
-                                    ...i,
-                                    memberIndices: e.target.checked
-                                      ? [...indices, m.index]
-                                      : indices.filter((n) => n !== m.index),
-                                  }
+                                ? { ...i, fingerprint: fresh.fingerprint, members: fresh.members }
                                 : i,
                             ),
                           })
                         }}
+                      >
+                        Обновить
+                      </button>
+                      {[index - 1, index + 1].map((to, n) => (
+                        <button
+                          key={n}
+                          aria-label={n ? 'Переместить вниз' : 'Переместить вверх'}
+                          disabled={to < 0 || to >= set.items.length}
+                          className={refModButton}
+                          onClick={() => {
+                            const items = [...set.items]
+                            items.splice(to, 0, items.splice(index, 1)[0])
+                            update({ ...set, items })
+                          }}
+                        >
+                          {n ? (
+                            <ChevronDownIcon className="w-3 h-3" />
+                          ) : (
+                            <ChevronUpIcon className="w-3 h-3" />
+                          )}
+                        </button>
+                      ))}
+                      <button
+                        aria-label={`Убрать ${item.name}`}
+                        className={refModButton}
+                        onClick={() =>
+                          update({ ...set, items: set.items.filter((i) => i.id !== item.id) })
+                        }
+                      >
+                        <Trash2Icon className="w-3 h-3" />
+                      </button>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-3 text-xs">
+                      {(['strength', 'visualStrength', 'audioStrength'] as const).map((key, k) => (
+                        <label key={key} className="flex items-center gap-1 text-muted-foreground">
+                          {['Сила', 'Визуал', 'Аудио'][k]}
+                          <input
+                            type="number"
+                            aria-label={`${item.name}: ${key}`}
+                            className={`${refModInput} w-16`}
+                            disabled={key === 'audioStrength' && !audio}
+                            min={0}
+                            max={1}
+                            step={0.05}
+                            value={item[key]}
+                            onChange={(e) =>
+                              update({
+                                ...set,
+                                items: set.items.map((i) =>
+                                  i.id === item.id
+                                    ? {
+                                        ...i,
+                                        [key]: Math.min(1, Math.max(0, Number(e.target.value))),
+                                      }
+                                    : i,
+                                ),
+                              })
+                            }
+                          />
+                        </label>
+                      ))}
+                      <label>
+                        Копии{' '}
+                        <input
+                          aria-label={`${item.name}: копии`}
+                          className={`${refModInput} w-14`}
+                          type="number"
+                          min={1}
+                          max={8}
+                          value={item.copies}
+                          onChange={(e) =>
+                            update({
+                              ...set,
+                              items: set.items.map((i) =>
+                                i.id === item.id
+                                  ? {
+                                      ...i,
+                                      copies: Math.max(
+                                        1,
+                                        Math.min(8, Math.round(Number(e.target.value))),
+                                      ),
+                                    }
+                                  : i,
+                              ),
+                            })
+                          }
+                        />
+                      </label>
+                      <select
+                        aria-label={`${item.name}: состав`}
+                        className={refModInput}
+                        value={item.components}
+                        onChange={(e) =>
+                          update({
+                            ...set,
+                            items: set.items.map((i) =>
+                              i.id === item.id
+                                ? { ...i, components: e.target.value as typeof i.components }
+                                : i,
+                            ),
+                          })
+                        }
+                      >
+                        <option value="All">Все компоненты</option>
+                        <option value="Visual">Визуальные</option>
+                        <option value="Audio" disabled={!audio}>
+                          Аудио
+                        </option>
+                      </select>
+                    </div>
+                    <details className="text-xs text-muted-foreground">
+                      <summary>Компоненты ({item.members.length})</summary>
+                      <div className="flex flex-wrap gap-3 pt-2">
+                        {item.members.map((m) => (
+                          <label key={m.index} className="flex gap-1 items-center">
+                            <input
+                              type="checkbox"
+                              disabled={m.kind === 'audio' && !audio}
+                              checked={!item.memberIndices || item.memberIndices.includes(m.index)}
+                              onChange={(e) => {
+                                const indices =
+                                  item.memberIndices || item.members.map((x) => x.index)
+                                update({
+                                  ...set,
+                                  items: set.items.map((i) =>
+                                    i.id === item.id
+                                      ? {
+                                          ...i,
+                                          memberIndices: e.target.checked
+                                            ? [...indices, m.index]
+                                            : indices.filter((n) => n !== m.index),
+                                        }
+                                      : i,
+                                  ),
+                                })
+                              }}
+                            />
+                            {m.name} · {m.kind} · {m.tokens}
+                            {labels
+                              .filter((l) => l.id.startsWith(`${item.id}:${m.index}:`))
+                              .map((l) => (
+                                <code key={l.id} className="text-amber-400 ml-1">
+                                  {l.trigger}
+                                </code>
+                              ))}
+                          </label>
+                        ))}
+                      </div>
+                    </details>
+                    {item.members.some((m) => m.config) && (
+                      <button
+                        className={refModButton}
+                        onClick={() => {
+                          const config = item.members.find((m) => m.config)?.config
+                          const toCurve = (v: unknown, fallback: RefModCurve): RefModCurve =>
+                            Array.isArray(v) &&
+                            CURVE_DIRECTIONS.includes(v[0]) &&
+                            CURVE_SHAPES.includes(v[1]) &&
+                            Number.isFinite(v[2])
+                              ? { direction: v[0], shape: v[1], value: v[2] }
+                              : fallback
+                          update({
+                            ...set,
+                            retention:
+                              typeof config?.retention === 'number'
+                                ? Math.min(1, Math.max(0, config.retention))
+                                : set.retention,
+                            frameCurve: toCurve(config?.curve, set.frameCurve),
+                            stepCurve: toCurve(config?.step_curve, set.stepCurve),
+                          })
+                          toast.success('Настройки файла загружены в поля кривых')
+                        }}
+                      >
+                        Загрузить настройки из файла
+                      </button>
+                    )}
+                  </div>
+                ))}
+                {target === 'generate' && (
+                  <button
+                    className={refModButton}
+                    disabled={!active}
+                    onClick={() => {
+                      setOpen(false)
+                      window.dispatchEvent(new Event('h3:refmod-compare'))
+                    }}
+                  >
+                    A/B: без RefMods / с RefMods
+                  </button>
+                )}
+                <details className="rounded-lg border border-border p-3">
+                  <summary className="cursor-pointer text-xs text-muted-foreground">
+                    Общие настройки: сила, кривые, бюджет и сохранённые наборы
+                  </summary>
+                  <div className="space-y-3 pt-3">
+                    <label className="flex items-center gap-2 text-xs">
+                      Общая сила набора{' '}
+                      <input
+                        aria-label="Общая сила RefMods"
+                        type="number"
+                        className={`${refModInput} w-20`}
+                        min={0}
+                        max={1}
+                        step={0.05}
+                        value={set.retention ?? 1}
+                        onChange={(e) =>
+                          update({
+                            ...set,
+                            retention: Math.max(0, Math.min(1, Number(e.target.value))),
+                          })
+                        }
                       />
-                      {m.name} · {m.kind} · {m.tokens}
-                      {labels.filter(l=>l.id.startsWith(`${item.id}:${m.index}:`)).map(l=><code key={l.id} className="text-amber-400 ml-1">{l.trigger}</code>)}
                     </label>
-                  ))}
-                </div>
-              </details>
-              {item.members.some((m) => m.config) && (
-                <button
-                  className={refModButton}
-                  onClick={() => {
-                    const config = item.members.find((m) => m.config)?.config
-                    const toCurve = (v: unknown, fallback: RefModCurve): RefModCurve =>
-                      Array.isArray(v) &&
-                      CURVE_DIRECTIONS.includes(v[0]) &&
-                      CURVE_SHAPES.includes(v[1]) &&
-                      Number.isFinite(v[2])
-                        ? { direction: v[0], shape: v[1], value: v[2] }
-                        : fallback
-                    update({
-                      ...set,
-                      retention:
-                        typeof config?.retention === 'number'
-                          ? Math.min(1, Math.max(0, config.retention))
-                          : set.retention,
-                      frameCurve: toCurve(config?.curve, set.frameCurve),
-                      stepCurve: toCurve(config?.step_curve, set.stepCurve),
-                    })
-                    toast.success('Настройки файла загружены в поля кривых')
-                  }}
-                >
-                  Загрузить настройки из файла
-                </button>
-              )}
-            </div>
-          ))}
-          {target === 'generate' && (
-            <button
-              className={refModButton}
-              disabled={!active}
-              onClick={() => window.dispatchEvent(new Event('h3:refmod-compare'))}
-            >
-              A/B: без RefMods / с RefMods
-            </button>
-          )}
-          <label className="flex items-center gap-2 text-xs">
-            Общая сила набора{' '}
-            <input
-              aria-label="Общая сила RefMods"
-              type="number"
-              className={`${refModInput} w-20`}
-              min={0}
-              max={1}
-              step={0.05}
-              value={set.retention ?? 1}
-              onChange={(e) =>
-                update({ ...set, retention: Math.max(0, Math.min(1, Number(e.target.value))) })
-              }
-            />
-          </label>
-          <RefModReferenceBudget target={target} refModTokenCount={tokens} />
-          <RefModCurveEditor
-            value={set.frameCurve}
-            label="Кадры референса"
-            onChange={(frameCurve) => update({ ...set, frameCurve })}
-          />
-          <RefModCurveEditor
-            value={set.stepCurve}
-            label="Шаги каждого прохода"
-            onChange={(stepCurve) => update({ ...set, stepCurve })}
-          />
-          <div className="flex flex-wrap gap-2 items-center text-xs">
-            <label>
-              Бюджет RefMods{' '}
-              <input
-                aria-label="Бюджет RefMods"
-                type="number"
-                className={`${refModInput} w-24`}
-                min={1}
-                max={1048576}
-                value={set.maxTokens}
-                onChange={(e) =>
-                  update({ ...set, maxTokens: Math.max(1, Math.round(Number(e.target.value))) })
-                }
-              />
-            </label>
-            <input
-              aria-label="Имя набора"
-              className={refModInput}
-              placeholder="Имя набора"
-              value={presetName}
-              onChange={(e) => setPresetName(e.target.value)}
-            />
-            <button
-              className={refModButton}
-              disabled={!presetName.trim()}
-              onClick={() => {
-                store.savePreset(presetName.trim(), set)
-                toast.success('Набор сохранён')
-              }}
-            >
-              Сохранить набор
-            </button>
-            <select
-              aria-label="Сохранённые наборы"
-              className={refModInput}
-              value=""
-              onChange={(e) => {
-                if (store.presets[e.target.value])
-                  update(structuredClone(store.presets[e.target.value]))
-              }}
-            >
-              <option value="">Применить набор…</option>
-              {Object.keys(store.presets).map((k) => (
-                <option key={k}>{k}</option>
-              ))}
-            </select>
-            <button className={refModButton} onClick={() => update(emptyRefModSet())}>
-              Отключить всё
-            </button>
+                    <RefModReferenceBudget target={target} refModTokenCount={tokens} />
+                    <RefModCurveEditor
+                      value={set.frameCurve}
+                      label="Кадры референса"
+                      onChange={(frameCurve) => update({ ...set, frameCurve })}
+                    />
+                    <RefModCurveEditor
+                      value={set.stepCurve}
+                      label="Шаги каждого прохода"
+                      onChange={(stepCurve) => update({ ...set, stepCurve })}
+                    />
+                    <div className="flex flex-wrap gap-2 items-center text-xs">
+                      <label>
+                        Бюджет RefMods{' '}
+                        <input
+                          aria-label="Бюджет RefMods"
+                          type="number"
+                          className={`${refModInput} w-24`}
+                          min={1}
+                          max={1048576}
+                          value={set.maxTokens}
+                          onChange={(e) =>
+                            update({
+                              ...set,
+                              maxTokens: Math.max(1, Math.round(Number(e.target.value))),
+                            })
+                          }
+                        />
+                      </label>
+                      <input
+                        aria-label="Имя набора"
+                        className={refModInput}
+                        placeholder="Имя набора"
+                        value={presetName}
+                        onChange={(e) => setPresetName(e.target.value)}
+                      />
+                      <button
+                        className={refModButton}
+                        disabled={!presetName.trim()}
+                        onClick={() => {
+                          store.savePreset(presetName.trim(), set)
+                          toast.success('Набор сохранён')
+                        }}
+                      >
+                        Сохранить набор
+                      </button>
+                      <select
+                        aria-label="Сохранённые наборы"
+                        className={refModInput}
+                        value=""
+                        onChange={(e) => {
+                          if (store.presets[e.target.value])
+                            update(structuredClone(store.presets[e.target.value]))
+                        }}
+                      >
+                        <option value="">Применить набор…</option>
+                        {Object.keys(store.presets).map((k) => (
+                          <option key={k}>{k}</option>
+                        ))}
+                      </select>
+                      <button className={refModButton} onClick={() => update(emptyRefModSet())}>
+                        Отключить всё
+                      </button>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground">
+                      Кривые относятся к исходному референсу и вычислению модели. Аудио
+                      экспериментальное; комплект не гарантирует привязку голоса к персонажу.
+                    </p>
+                  </div>
+                </details>
+              </div>
+            )}
           </div>
-          <p className="text-[11px] text-muted-foreground">
-            Кривые относятся к исходному референсу и вычислению модели. Аудио экспериментальное;
-            комплект не гарантирует привязку голоса к персонажу.
-          </p>
-        </div>
-      )}
+          <DialogFooter>
+            <button type="button" className={refModButton} onClick={() => setOpen(false)}>
+              Готово
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </section>
   )
 }

@@ -10,10 +10,13 @@
  */
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import type { ReferenceLabel } from './refmods/types'
 
 export interface AssistantChatMessage {
   role: 'user' | 'assistant'
   content: string
+  /** Reference identities at reply time; tags can be remapped after reordering. */
+  referenceLabels?: ReferenceLabel[]
   /** (правка 87) Вложение к сообщению (изображение/видео для LLM-анализа). */
   attachment?: {
     path: string

@@ -24,9 +24,10 @@ import { create } from 'zustand'
 import { toast } from 'sonner'
 import { useAssistantChats, type AssistantChatMessage, type AssistantChatMode } from './assistant-chats-store'
 import { useGenStore } from './gen-store'
-import { refModAssistantContext } from './refmods/assistant-context'
+import { refModAssistantState, REF_MOD_ASSISTANT_HELP, type RefModAssistantState } from './refmods/assistant-context'
+import { assistantClipLabels, remapAssistantReferences } from './refmods/assistant-references'
 import { useControlNetTarget } from './controlnet-target-store' // (правка 502)
-import { H3_SPEC_A, H3_SPEC_B, H3_SPEC_EXTEND } from './h3-prompt-spec'
+import { H3_SPEC_A, H3_SPEC_B, H3_SPEC_EXTEND, H3_SPEC_A_REFERENCES, H3_SPEC_EXTEND_REFERENCES } from './h3-prompt-spec'
 
 export interface LlmStatusResp {
   running: boolean
@@ -80,12 +81,13 @@ async function buildSystemMessage(
   videoVisionOn: boolean,
   chatMode: AssistantChatMode = 'generate',
   signal?: AbortSignal,
+  mods = refModAssistantState(chatMode),
 ): Promise<string> {
   // (правка 427) extend-чат — свой контекст (клипы, extend-рефы, мета исходника).
-  if (chatMode === 'extend') return buildExtendSystemMessage(signal)
+  if (chatMode === 'extend') return buildExtendSystemMessage(signal, mods)
   // (правка 502) controlnet-чат — свой контекст (контрольное видео,
   // refImages вкладки «ControlNet», параметры контроля).
-  if (chatMode === 'controlnet') return buildControlNetSystemMessage(videoVisionOn)
+  if (chatMode === 'controlnet') return buildControlNetSystemMessage(videoVisionOn, mods)
   const v = useGenStore.getState().video
   const mode = v.mode // (правка 150) 'ref' | 't2v' | 'flf' | 'extend'
   const refs = v.refs
@@ -106,7 +108,7 @@ async function buildSystemMessage(
   //              противоречивые указания «ФОРМАТ A» + «переключись на
   //              Референсы»).
   const isExtendMode = mode === 'extend'
-  const H3_SPEC = isExtendMode ? H3_SPEC_A : mode === 'ref' ? H3_SPEC_B : H3_SPEC_A
+  const H3_SPEC = mode === 'ref' ? H3_SPEC_B : mods.active ? H3_SPEC_A_REFERENCES : H3_SPEC_A
 
   // (правка 150) В t2v/flf из рефов уходят ТОЛЬКО аудио (картинки/видео не используются нодой).
   // Ассистенту показываем только аудио-рефы, чтобы LLM не вписывала <Picture N>/<Video N>.
@@ -142,7 +144,18 @@ async function buildSystemMessage(
   // (правка 168) кадры — живые из текущей формы генерации.
   const hasFlfFrames = mode === 'flf' && (!!v.startFrame?.path || !!v.endFrame?.path)
 
-  if (effectiveRefs.length === 0 && !hasFlfFrames) {
+  if (mods.active) {
+    const lines = [
+      `РЕЖИМ ГЕНЕРАЦИИ: ${mode}. Активны RefMods → ${mode === 'ref' ? 'FORMAT B: шесть полей, subject_definitions первым' : 'FORMAT A: три поля; реальные метки RefMods разрешены'}.`,
+      mods.context,
+      'Ссылайся на выбранные компоненты по общей карте выше. В FORMAT B свяжи нужные изображения с <Subject N>; в FORMAT A используй реальные метки непосредственно в описании.',
+      'Обычные изображения передаются как файлы/digest. Обычные видео — digest только при включённом видении видео; содержимое RefMods этим не раскрывается.',
+      videoVisionOn ? 'Видение обычных видео включено.' : 'Видение видео выключено: их содержимое не выдумывай.',
+    ]
+    if (hasFlfFrames) lines.push('Первый и последний кадры задают границы перехода; их позиции в общей карте уже учтены. Сохраняй композицию границ, описывай движение между ними.')
+    if (v.audioGuide) lines.push('Audio Guide — отдельная исходная дорожка, она не занимает метку Audio в карте RefMods. Не выдавай её за экспериментальный аудио RefMod.')
+    attachedBlock = lines.join('\n')
+  } else if (effectiveRefs.length === 0 && !hasFlfFrames) {
     attachedBlock =
       modeHint + '\n' +
       'Прикреплённых референсов НЕТ → это FORMAT A (text-to-video).\n' +
@@ -253,7 +266,7 @@ async function buildSystemMessage(
 
   // ── Visual anchor: lock characters/objects by what the model actually sees ──
   // (правка 717) Сжато: было 4 пункта по 200+ символов каждый.
-  const anchorBlock = images.length
+  const anchorBlock = images.length && mode === 'ref'
     ? '\n=== ВИЗУАЛЬНЫЙ ЯКОРЬ ===\n' +
       'Ты получаешь визуальное описание (digest) прикреплённых изображений. Для каждого персонажа/объекта, который должен попасть в кадр:\n' +
       '1) Опиши по факту digest: черты лица, глаза, волосы, кожа, возраст, телосложение, одежда (цвет, фасон, детали), характерные признаки (шрамы, тату, очки, украшения).\n' +
@@ -265,10 +278,10 @@ async function buildSystemMessage(
   // ── Audio anchor: reference voice/tone for MiniMax (правки 36: модель НЕ слышит) ──
   // (правка 717) Пункты 3 и 4 слились с общим правилом «аудио не слышно»
   // из honestyBlock — здесь осталось только специфичное для MiniMax.
-  const hasAudioRefs = audios.length > 0 || videos.some((r) => r.includeAudio)
+  const hasAudioRefs = mods.active ? mods.labels.some(l => l.kind === 'audio') : audios.length > 0 || videos.some((r) => r.includeAudio)
   const audioAnchorBlock = hasAudioRefs
     ? '\n=== АУДИО-ЯКОРЬ ===\n' +
-      'Аудио-референсы (и звуковые дорожки видео) прикреплены для MiniMax (ref_audios) — они задают ГОЛОС/ЗВУЧАНИЕ в генерации.\n' +
+      'Аудио-референсы (и звуковые дорожки видео) используются MiniMax как ориентир звучания. Аудио RefMods экспериментально, перенос личности голоса не гарантирован.\n' +
       '1) Ссылайся на <Audio N> (или звуковую дорожку <Video N>) как на референс голоса/звучания — MiniMax использует сам файл.\n' +
       '2) Реплику/текст бери ТОЛЬКО из запроса пользователя. Если он не дал текст — укажи, что персонаж говорит, и привяжи <Audio N>, но не выдумывай слова.\n' +
       '3) Характер голоса (тон, пол, возраст) указывай словами, только если пользователь его описал.'
@@ -323,7 +336,7 @@ ${guide3dBlock}
  * ЗАПРЕЩЕНЫ — они добавляются автоматически при сабмите (extend-view.tsx,
  * правки 165/197), дублирование портит conditioning.
  */
-async function buildExtendSystemMessage(signal?: AbortSignal): Promise<string> {
+async function buildExtendSystemMessage(signal?: AbortSignal, mods = refModAssistantState('extend')): Promise<string> {
   const v = useGenStore.getState().video
   const clips = v.extendClips
   const refs = v.extendImageRefs
@@ -352,7 +365,18 @@ async function buildExtendSystemMessage(signal?: AbortSignal): Promise<string> {
 
   // ── Референсы продления (extendImageRefs — своя нумерация <Picture N>) ──
   lines.push('')
-  if (refs.length) {
+  if (mods.active) {
+    lines.push(mods.context)
+    lines.push('Якорь стыка — служебный визуальный компонент исходного видео, а не видео RefMod. Не описывай его как просмотренный файл. В последующих клипах добавляется ещё один служебный Picture перед RefMods; используй карту соответствующего клипа ниже.')
+    if (v.extendSourceVideoPath && clips.length > 1) {
+      for (let i = 1; i < clips.length; i++) {
+        lines.push(`Карта RefMods для clip: ${i + 1} (дополнительный якорь предыдущего клипа):`)
+        for (const l of assistantClipLabels(mods.labels, i + 1).filter(l => mods.set.items.some(item => l.id.startsWith(`${item.id}:`)))) {
+          lines.push(`${l.trigger} = ${JSON.stringify(l.label)}`)
+        }
+      }
+    }
+  } else if (refs.length) {
     lines.push('РЕФЕРЕНСЫ ПРОДЛЕНИЯ (картинки; ты получаешь их визуальное описание/видишь приложенный файл):')
     refs.forEach((r, i) => {
       lines.push(`  <Picture ${i + 1}> = ${r.name}${r.imageIntent ? ` (используется как: ${r.imageIntent})` : ''}`)
@@ -414,12 +438,14 @@ async function buildExtendSystemMessage(signal?: AbortSignal): Promise<string> {
     '\n=== ПРАВИЛА ПРОДЛЕНИЯ (строго) ===\n' +
     '1) Промпт КАЖДОГО клипа — ОТДЕЛЬНЫМ fence. ПЕРВАЯ строка внутри fence — маркер `clip: N` (N = номер карточки клипа из списка выше, 1-based), дальше — только текст промпта. UI вставляет промпт в карточку ПО ЭТОМУ МАРКЕРУ — без него вставка невозможна.\n' +
     '2) ЗАПРОС → ВСЕ КЛИПЫ: общий запрос пользователя распределяй последовательно на ВСЕ клипы из списка выше (clip: 1 … clip: N) с учётом длительности каждого. Меньше промптов, чем клипов, — только если пользователь явно просит конкретный клип («перепиши клип 2»).\n' +
-    '3) НИКОГДА не пиши в промпте клипа метку <Video 1> и указания вида «продолжай ту же сцену/камеру» (camera lock) — они добавляются в КАЖДЫЙ клип автоматически. Дублирование портит промпт.\n' +
+    (mods.active
+      ? '3) Исходник передаётся служебным якорем Picture; не назначай ему метку Video. Video/Audio допустимы только для реальных компонентов RefMods из карты. Camera lock добавляется автоматически, не дублируй его.\n'
+      : '3) НИКОГДА не пиши в промпте клипа метку <Video 1> и указания вида «продолжай ту же сцену/камеру» (camera lock) — они добавляются в КАЖДЫЙ клип автоматически. Дублирование портит промпт.\n') +
     '4) НЕ ПЕРЕОПИСЫВАЙ УЖЕ ДАННОЕ: модель видит хвост предыдущего видео и референсы — внешность, одежда, локация, свет и атмосфера УЖЕ заданы и продолжаются сами. Промпт клипа = НОВОЕ действие/движение/событие куска (и новые элементы, если появляются). Статику упоминай ТОЛЬКО если она меняется.\n' +
     '5) МЕТКИ РЕФЕРЕНСОВ: если есть картинки-рефы — при ПЕРВОМ упоминании персонажа/объекта в КАЖДОМ клипе ставь его метку <Picture N> («<Picture 1> останавливается и оборачивается…»). Только из списка выше. Метки <Subject N>, <Character N> и т.п. ЗАПРЕЩЕНЫ — они не привязаны ни к чему, и референс не сработает.\n' +
     '6) ОДИН ШОТ ПО УМОЛЧАНИЮ: всё продление — один непрерывный дубль (та же камера, то же действие разворачивается во времени). НЕ дроби клип на несколько шотов («[Shot 1]/[Shot 2]», «cut to») и не начинай клип «новым кадром». Мультишот — только по ЯВНОМУ просьбе («сделай мультишот», «другой ракурс»). Клипы продолжают друг друга бесшовно: клип 1 стартует с последнего кадра исходника, клип N — с последнего кадра клипа N−1; таймкоды укладывай в длительность клипа.\n' +
     '7) ЗВУК: если речь/диалог/озвучка НЕ запрошены — в overall_soundscape ОБЯЗАТЕЛЬНО первым словом напиши «no voice, no speech, no dialogue, no narration», потом ambient-звуки сцены. non_diegetic_music: N/A. Голос, реплики, закадровый текст и музыку по умолчанию НЕ добавляй.\n' +
-    '8) Формат промпта клипа — как в спеке H3: integrated_multimodal_description / overall_soundscape / non_diegetic_music. Без camera-lock и без <Video 1>.'
+    '8) Формат промпта клипа: integrated_multimodal_description / overall_soundscape / non_diegetic_music. Без camera-lock; метки — только по правилам выше.'
 
   // (правка 717) Общий блок честности/границ — тот же, что в generate-режиме.
   const honestyBlock =
@@ -429,7 +455,7 @@ async function buildExtendSystemMessage(signal?: AbortSignal): Promise<string> {
     '3) Этот чат — независимый диалог режима «Продление»: сообщений других чатов ты не видишь. Не переноси оттуда тему, персонажей, сцены или промпт.\n' +
     '4) Вложения из чата — только для описания, это НЕ референсы продления: НИКОГДА не помечай их <Picture N>. Если вложение должно попасть в видео — скажи добавить его в картинки-рефы на вкладке «Продление».'
 
-  return `${H3_SPEC_EXTEND}
+  return `${mods.active ? H3_SPEC_EXTEND_REFERENCES : H3_SPEC_EXTEND}
 
 === SESSION CONTEXT (ПРОДЛЕНИЕ) ===
 ${lines.join('\n')}
@@ -447,7 +473,7 @@ ${honestyBlock}
  * Движение НЕ описывай словами — его задаёт контроль; промпт описывает
  * ТОЛЬКО внешний вид: сцену, персонажей, стиль, свет, звук.
  */
-function buildControlNetSystemMessage(videoVisionOn: boolean): string {
+function buildControlNetSystemMessage(videoVisionOn: boolean, mods = refModAssistantState('controlnet')): string {
   const st = useControlNetTarget.getState()
   const direct = st.params.controlType === 'direct'
 
@@ -482,7 +508,7 @@ function buildControlNetSystemMessage(videoVisionOn: boolean): string {
     st.refImages.forEach((r, i) => {
       lines.push(`  <Picture ${i + 1}> = ${r.name}`)
     })
-  } else {
+  } else if (!mods.active) {
     lines.push('Изображений-референсов НЕТ → метки <Picture N>, <Subject N> ЗАПРЕЩЕНЫ.')
   }
   // (правка 733) Аудио-референсов в ControlNet почти не бывает: звук H3
@@ -494,8 +520,10 @@ function buildControlNetSystemMessage(videoVisionOn: boolean): string {
   // Поэтому правило условное: метку ставим, только если реф реально есть
   // (direct) или пользователь сам явно просит сослаться на аудио-реф;
   // иначе — не указываем, звук генерируется заново.
-  const audioRefAvailable = direct && !!st.source
-  if (audioRefAvailable) {
+  const audioRefAvailable = direct && !!st.source && st.source.hasAudio !== false
+  if (mods.active) {
+    lines.push(mods.context)
+  } else if (audioRefAvailable) {
     lines.push('<Audio 1> = звуковая дорожка <Video 1> — ПРИКРЕПЛЕНА как аудио-референс (ref_video_audio_0). Это единственный аудио-реф: <Audio 1> разрешён и уместен, когда в запросе речь о голосе/звуке; если звук не обсуждается — метку можно не ставить, звук идёт заново по описанию.')
   } else {
     lines.push('АУДИО-РЕФЕРЕНСОВ НЕТ → метки <Audio N> не указывай. Звук, музыка и реплики генерируются заново по тексту промпта. Исключение одно: пользователь САМ явно просит сослаться на аудио-реф — только тогда <Audio 1> допустим.')
@@ -507,7 +535,7 @@ function buildControlNetSystemMessage(videoVisionOn: boolean): string {
   // (правка 717) Сжато: 7 пунктов → 5, блок «ЧЕСТНОСТЬ» и «НЕЗАВИСИМОСТЬ
   // ЧАТОВ» объединены с «ЖЁСТКИМИ ПРАВИЛАМИ» (было ~1.3k токенов).
   // Direct — отдельная ветка: это не «карта движения», а перенос анимации.
-  const rulesBlock = direct
+  let rulesBlock = direct
     ? '\n=== ПРАВИЛА РЕЖИМА CONTROLNET (DIRECT: ПЕРЕНОС АНИМАЦИИ) ===\n' +
       '1) ⚠️ <Video 1> — источник анимации: движения тела, жестов, мимики, тайминга, камеры и монтажного ритма. В detailed_description ОБЯЗАТЕЛЬНО одной фразой укажи: «The motion, timing, gestures and camera movement follow <Video 1>». Другие метки <Video N> ЗАПРЕЩЕНЫ.\n' +
       '2) digest/кадры <Video 1> используй только чтобы понять перенос. НЕ расписывай движение и камеру по кадрам — контроль уже задаёт анимацию (это важнее общего требования базовой спеки описывать камеру). Если digest нет — не выдумывай содержимое видео.\n' +
@@ -523,6 +551,12 @@ function buildControlNetSystemMessage(videoVisionOn: boolean): string {
       '5) ЗВУК: аудио-рефов здесь НЕТ — метки <Audio N> не указывай, звук и реплики синтезируются заново по тексту промпта. Исключение одно: пользователь САМ явно просит сослаться на аудио-реф — только тогда <Audio 1> допустим. Если речь/диалог/озвучка НЕ запрошены — overall_soundscape: ambient/тишина, non_diegetic_music: N/A. Голос, реплики, закадровый текст и музыку по умолчанию НЕ добавляй.\n' +
       '6) ЧЕСТНОСТЬ: текущий список референсов выше — единственный источник правды. Кадров <Video 1> ты НЕ видишь (это видео, не картинка) — не угадывай и не описывай его содержимое, но в промпте он ОБЯЗАТЕЛЬНО упоминается. Деталей, которых не видишь на картинках, не выдумывай — скажи «не вижу».\n' +
       '7) Этот чат независим: сообщений других чатов ты не видишь. Источник, параметры и референсы выше — ТЕКУЩЕЕ состояние вкладки «ControlNet». Вложения из чата — только для описания, это НЕ референсы: НИКОГДА не помечай их <Picture N>.'
+
+  if (mods.active) {
+    rulesBlock = rulesBlock
+      .replaceAll('Другие метки <Video N> ЗАПРЕЩЕНЫ.', 'Другие Video допустимы только для компонентов RefMods из общей карты и не заменяют контроль движения.')
+      .replace(/5\) ЗВУК:[^\n]+/, '5) ЗВУК: используй только Audio из общей карты. Аудио RefMods экспериментально; не обещай перенос личности голоса. Реплики — только по запросу пользователя, без запроса речи — ambient/тишина, non_diegetic_music: N/A.')
+  }
 
   return `${H3_SPEC_B}
 
@@ -608,7 +642,7 @@ function numberSelectionHint(msgs: AssistantChatMessage[], n: number): string | 
  */
 const REF_LIMITS = { image: 9, video: 3, audio: 3, total: 15 } as const
 
-function getReferences(chatMode: AssistantChatMode = 'generate'): Array<{
+function getReferences(chatMode: AssistantChatMode = 'generate', mods?: RefModAssistantState): Array<{
   path: string
   trigger: string
   intent?: string
@@ -669,7 +703,9 @@ function getReferences(chatMode: AssistantChatMode = 'generate'): Array<{
   // (правка 150) В t2v/flf из рефов уходят ТОЛЬКО аудио (картинки/видео не используются нодой).
   // (правка 151) В flf: кадры (startFrame/endFrame) прикрепляются как image-рефы,
   // чтобы LLM их ВИДЕЛА и описала словами (запрет <Picture N> — см. system-промпт).
-  const refs = v.mode === 'ref' ? v.refs : v.refs.filter((r) => r.kind === 'audio')
+  const refs = mods?.active
+    ? v.mode === 'ref' ? v.refs.filter(r => !(v.audioGuide && r.kind === 'audio')) : []
+    : v.mode === 'ref' ? v.refs : v.refs.filter((r) => r.kind === 'audio')
   const out: Array<{
     path: string
     trigger: string
@@ -695,18 +731,22 @@ function getReferences(chatMode: AssistantChatMode = 'generate'): Array<{
   }
 
   for (const r of refs) {
+    const mapped = mods?.active ? mods.labels.find(l => l.id === r.id)?.trigger.slice(1, -1) : undefined
     // (правка 717) Лимит по видам + общий потолок. Приоритет: картинки
     // (их модель видит и они несут внешность), потом видео, потом аудио.
     if (out.length >= REF_LIMITS.total) break
     if (r.kind === 'image') {
       if (counters.image >= REF_LIMITS.image) continue
-      out.push({ path: r.path, trigger: `Picture ${++counters.image}`, intent: r.imageIntent || 'identity', kind: 'image' })
+      out.push({ path: r.path, trigger: mapped || `Picture ${counters.image + 1}`, intent: r.imageIntent || 'identity', kind: 'image' })
+      counters.image++
     } else if (r.kind === 'video') {
       if (counters.video >= REF_LIMITS.video) continue
-      out.push({ path: r.path, trigger: `Video ${++counters.video}`, kind: 'video', includeAudio: r.includeAudio })
+      out.push({ path: r.path, trigger: mapped || `Video ${counters.video + 1}`, kind: 'video', includeAudio: r.includeAudio })
+      counters.video++
     } else if (r.kind === 'audio') {
       if (counters.audio >= REF_LIMITS.audio) continue
-      out.push({ path: r.path, trigger: `Audio ${++counters.audio}`, kind: 'audio' })
+      out.push({ path: r.path, trigger: mapped || `Audio ${counters.audio + 1}`, kind: 'audio' })
+      counters.audio++
     }
   }
   return out
@@ -796,6 +836,7 @@ export function runAssistantCompletion(
 
   void (async () => {
     let final = ''
+    let responseReferences: RefModAssistantState['labels'] | undefined
     // false = сервер ответил ошибкой на сам POST (409/503/...): показываем
     // ЭТУ ошибку; true = стрим начался и оборвался посередине
     let streamStarted = false
@@ -834,7 +875,6 @@ export function runAssistantCompletion(
       // (правка 168) Рефы для прикрепления — из ЖИВОГО gen-store: модель видит
       // контекст генерации автоматически, включая рефы, добавленные посреди
       // диалога. Никаких ручных привязок.
-      const refs = getReferences(chatMode)
       // (правка 108) Вложения чата — ОТДЕЛЬНО от рефов генерации: они существуют
       // ТОЛЬКО в чате и нужны ТОЛЬКО для LLM-описания/анализа. В references
       // (<Picture N>/<Video N>) они НЕ попадают — сервер получает их отдельным
@@ -882,9 +922,14 @@ export function runAssistantCompletion(
           videoVisionOn = cfg.llm_video_vision !== false
         }
       } catch { /* ignore — default ON (сжатый digest) */ }
+      const mods = refModAssistantState(chatMode)
+      responseReferences = mods.active ? mods.labels : undefined
+      const refs = getReferences(chatMode, mods)
       // The stored history is untouched; this copy may get a one-line
       // clarification for numeric selections ("1", "2", ...).
-      const apiHistory = sanitizeRoles(history.slice(-HISTORY_LIMIT))
+      const apiHistory = sanitizeRoles(history.slice(-HISTORY_LIMIT).map(m => ({
+        ...m, content: remapAssistantReferences(m.content, m.referenceLabels, mods.labels),
+      })))
       const lastApiMsg = apiHistory[apiHistory.length - 1]
       if (lastApiMsg && lastApiMsg.role === 'user' && typeof lastApiMsg.content === 'string') {
         const selection = /^\s*([1-9]|1[0-9]|2[0-5])\s*$/.exec(lastApiMsg.content)
@@ -914,7 +959,7 @@ export function runAssistantCompletion(
             // (кнопка «Улучшить мой промпт» делает это автоматически).
             // (правка 427) Для extend-чата — системный промпт продления
             // (клипы, extend-рефы, мета исходника); await: дочитывает мету.
-            { role: 'system', content: await buildSystemMessage(videoVisionOn, chatMode, ac.signal) + refModAssistantContext(chatMode) },
+            { role: 'system', content: await buildSystemMessage(videoVisionOn, chatMode, ac.signal, mods) + REF_MOD_ASSISTANT_HELP },
             // Replay the (capped) chat history so the model "remembers"
             ...apiHistory,
           ],
@@ -1079,6 +1124,7 @@ export function runAssistantCompletion(
         useAssistantChats.getState().appendMessage(chatId, {
           role: 'assistant',
           content: final + marker,
+          referenceLabels: responseReferences,
         })
       } else if (errorMessage) {
         // (правка 717) Ответа не было вовсе — оставляем в чате явную

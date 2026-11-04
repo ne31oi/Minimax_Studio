@@ -17,7 +17,7 @@ export function studioReferenceLabels(target: RefModTarget, set: RefModSet, over
         : target === 'generate' && video.mode === 'flf'
           ? [video.startFrame,video.endFrame].flatMap((r,i)=>r?[{id:`frame-${i}`,name:r.name,kind:'image' as const,previewUrl:r.previewUrl}]:[])
           : []
-  if (target === 'extend' && video.extendSourceVideoPath)
+  if (target === 'extend' && video.extendSourceVideoPath && raw.filter(r => r.kind === 'image').length < 9)
     raw.push({id:'native-extension-anchor',name:'Якорь стыка',kind:'image'})
   if (target === 'controlnet' && control.source)
     raw.push({id:'native-control-video',name:'Управляющее видео',kind:'video',includeAudio:control.params.controlType==='direct',hasAudio:control.source.hasAudio})
