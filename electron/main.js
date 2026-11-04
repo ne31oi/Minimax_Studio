@@ -19,9 +19,9 @@
  * Запуск: node_modules\.bin\electron electron\main.js (скрипт `npm run desktop`,
  * либо автоматически из start.bat — там же фолбэк на старый браузерный режим).
  */
-const { app, BrowserWindow, Menu, dialog, shell, ipcMain } = require('electron')
+const { app, BrowserWindow, Menu, MenuItem, dialog, shell, ipcMain, session } = require('electron')
 const { spawn, spawnSync } = require('node:child_process')
-const { existsSync, readFileSync, mkdirSync, writeFileSync, cpSync } = require('node:fs')
+const { existsSync, readFileSync, mkdirSync, writeFileSync, cpSync, appendFileSync } = require('node:fs')
 const fsPromises = require('node:fs').promises
 const path = require('node:path')
 const util = require('node:util')
@@ -96,6 +96,21 @@ let consoleTimer = null
  * зависший процесс Electron без окна.
  */
 let quitting = false
+
+// (правка 804) Однократный «заход на сброс хранилища» при выходе: первый
+// before-quit отменяется ради flushStorageData(), второй — обычный путь.
+let storageFlushDone = false
+
+/**
+ * (правка 795) Флаг «применяем обновление». Ставится в ipc h3:apply-update
+ * перед app.quit(). Нужен потому, что before-quit вызывает killAncestorCmd(),
+ * который бьёт taskkill /T /F по cmd-родителю — а апдейтер (PowerShell),
+ * порождённый нами же, остаётся в ЭТОМ ДЕРЕВЕ (detached:true не разрывает
+ * связь родитель-потомок для taskkill /T) и погибал на старте, не успев
+ * написать ни строки в .update\apply_update.log. При applyingUpdate
+ * родительский cmd не трогаем: его снимает сам apply_update.ps1 (WaitPids).
+ */
+let applyingUpdate = false
 
 function consoleBroadcast() {
   if (consoleTimer) return
@@ -315,7 +330,9 @@ function killPortListeners(port) {
 
 /* ── config.ini → флаги ComfyUI (порт правки 551 из start.bat) ── */
 function parseIniVram() {
-  const v = { reserveGb: '3', dynamicVram: '1', asyncOffload: '0', vramHeadroom: '0' }
+  // (правка 814) Заводские значения 1/1 — те же, что в app-config.ts и
+  // config.ini. Здесь они используются только если файла конфига нет вовсе.
+  const v = { reserveGb: '1', dynamicVram: '1', asyncOffload: '0', vramHeadroom: '1' }
   if (!existsSync(CONFIG_INI)) return v
   let text = ''
   try {
@@ -331,10 +348,14 @@ function parseIniVram() {
   }
   // первый матч выигрывает (дубли ключей от старых конфигов), /b-семантика bat
   const num = (raw, dflt, re) => (raw !== undefined && re.test(raw) ? raw : dflt)
-  v.reserveGb = num(grab('reserve_gb'), '3', /^[0-9][0-9.]*$/)
+  // (правка 814) Заводские значения — 1/1, как в app-config.ts и config.ini.
+  // Раньше здесь стояли старые дефолты 3 и 2: ключа нет → Electron запускал
+  // ComfyUI с завышенными резервами, и поведение расходилось с интерфейсом
+  // (в настройках показывалось 1, а генерация резервировала больше).
+  v.reserveGb = num(grab('reserve_gb'), '1', /^[0-9][0-9.]*$/)
   v.dynamicVram = num(grab('dynamic_vram'), '1', /^[01]$/)
   v.asyncOffload = num(grab('async_offload'), '0', /^[01]$/)
-  v.vramHeadroom = num(grab('vram_headroom'), '2', /^[0-9][0-9.]*$/)
+  v.vramHeadroom = num(grab('vram_headroom'), '1', /^[0-9][0-9.]*$/)
   return v
 }
 
@@ -476,6 +497,10 @@ async function waitHttp(url, timeoutMs) {
 /* ── Окно ── */
 let win = null
 
+/* (правка 790) Дочерний web-сервер (server.js) — PID нужен apply_update.ps1,
+ * чтобы дождаться полной остановки приложения перед заменой файлов. */
+let webServerChild = null
+
 /* (правка 563) Кнопки окна из рендерера (preload → IPC): свои HTML-кнопки
  * в DesktopTitleBar вместо нативных. */
 ipcMain.on('h3:window-minimize', () => win?.minimize())
@@ -506,6 +531,125 @@ ipcMain.handle('h3:console-save', async (_e, text) => {
   }
 })
 
+/* (правка 790) «Перезапустить и установить»: web-сервер уже разложил staged-
+ * файлы в .update\staging и записал .update\armed.json. Здесь запускаем
+ * install\apply_update.ps1 ПРЯМЫМ spawn (НЕ spawnChild!) — before-quit убивает
+ * всё дерево children, а апдейтер обязан пережить выход Electron. На Windows
+ * дочерний процесс переживает родителя сам, отдельный (detached) процесс для
+ * этого не нужен — более того, powershell с detached вообще не стартует
+ * (правка 797). Скрипт ждёт завершения перечисленных PID (Electron, web-сервер,
+ * cmd-родитель), делает бэкап подменяемых файлов и при срыве откатывается из
+ * .update\backup. */
+/* (правка 796) Все шаги апдейтера пишутся в тот же .update\apply_update.log,
+ * что и сам PowerShell-скрипт. Без этого сорванное обновление выглядело как
+ * «ничего не произошло»: ни одной строки в логе, ни ошибки — spawn() падает
+ * асинхронно (исключение не ловится try/catch), а процесс-апдейтер мог быть
+ * убит ещё до первой строки своего лога. */
+function updateDiag(msg) {
+  try {
+    const dir = path.join(APP_ROOT, '.update')
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+    appendFileSync(path.join(dir, 'apply_update.log'),
+      new Date().toISOString() + ' [electron] ' + msg + '\n')
+  } catch { /* лог диагностики не важнее работы */ }
+}
+
+ipcMain.handle('h3:apply-update', () => {
+  const armedFile = path.join(APP_ROOT, '.update', 'armed.json')
+  let armed = null
+  try {
+    armed = JSON.parse(readFileSync(armedFile, 'utf8'))
+  } catch { /* нет armed.json — применять нечего */ }
+  if (!armed || !armed.version) return { ok: false, error: 'Обновление не подготовлено' }
+  const staging = path.join(APP_ROOT, '.update', 'staging')
+  if (!existsSync(staging)) return { ok: false, error: 'Папка staging не найдена — подготовка обновления потеряна' }
+  const psScript = path.join(APP_ROOT, 'install', 'apply_update.ps1')
+  if (!existsSync(psScript)) {
+    updateDiag('apply_update.ps1 NOT FOUND: ' + psScript)
+    return { ok: false, error: 'Файл установщика apply_update.ps1 не найден' }
+  }
+
+  const waitPids = [String(process.pid)]
+  if (webServerChild && webServerChild.pid) waitPids.push(String(webServerChild.pid))
+  // Скрытая cmd-оболочка от start_hidden.vbs/start.bat — родитель node-cli.
+  if (process.ppid) waitPids.push(String(process.ppid))
+
+  updateDiag('apply requested: version=' + armed.version +
+    ' depsChanged=' + Boolean(armed.depsChanged) + ' waitPids=' + waitPids.join(','))
+
+  const psArgs = [
+    '-NoProfile',
+    '-ExecutionPolicy', 'Bypass',
+    '-WindowStyle', 'Hidden',
+    '-File', psScript,
+    '-Root', APP_ROOT,
+    '-Version', String(armed.version),
+    '-DepsChanged', String(Boolean(armed.depsChanged)),
+    '-WaitPids', waitPids.join(','),
+  ]
+
+  try {
+    /* (правка 798) Настоящая причина срыва: Electron (Chromium) держит свой
+     * процесс в Windows Job Object с kill-on-close, и ЛЮБОЙ прямой потомок
+     * (spawn/powershell) наследует этот job и умирает вместе с приложением —
+     * на живой машине апдейтер успевал записать только «apply_update start»
+     * и гиб, не заменив ни одного файла. Замер: ps в job (inJob=True),
+     * живёт ровно 2 с = момент выхода Electron.
+     * Обход: explorer.exe передаёт .vbs уже работающей оболочке, PowerShell
+     * стартует вне job'а (inJob=False) и переживает выход приложения; проверено
+     * полным проходом скрипта при закрытом Electron. Команда передаётся через
+     * .update\apply_cmd.txt (UTF-16LE), сам .vbs окно не показывает. */
+    const cmdFile = path.join(APP_ROOT, '.update', 'apply_cmd.txt')
+    const vbsLauncher = path.join(APP_ROOT, 'install', 'run_apply_update.vbs')
+    let updater = null
+    let how = 'powershell'
+    if (existsSync(vbsLauncher)) {
+      try {
+        const cmdLine = [POWERSHELL, ...psArgs]
+          .map((a) => '"' + String(a).replace(/"/g, '""') + '"')
+          .join(' ')
+        writeFileSync(cmdFile, cmdLine, 'utf16le')
+        updater = spawn('explorer.exe', [vbsLauncher], {
+          cwd: APP_ROOT,
+          stdio: 'ignore',
+          windowsHide: true,
+        })
+        how = 'explorer+vbs'
+      } catch (e) {
+        updateDiag('explorer dispatch failed, falling back to direct spawn: ' + String(e && e.message ? e.message : e))
+        updater = null
+      }
+    }
+    if (!updater) {
+      // Fallback (старый payload без run_apply_update.vbs): прямой запуск.
+      // Работает, только если приложение не в job'е — лучше, чем ничего.
+      updater = spawn(POWERSHELL, psArgs, {
+        cwd: APP_ROOT,
+        // (правка 797) detached — причина мгновенной «тихой» смерти powershell.
+        stdio: 'ignore',
+        windowsHide: true,
+      })
+    }
+    // (правка 796) Ошибки spawn приходят АСИНХРОННО: без слушателя 'error'
+    // приложение молча выходило, а апдейтер так и не стартовал.
+    updater.on('error', (e) => updateDiag('updater spawn error: ' + (e && e.message ? e.message : String(e))))
+    updater.on('exit', (code, signal) => updateDiag('updater exited: code=' + code + ' signal=' + signal))
+    updater.unref()
+    // (правка 795) Апдейтер живёт в нашем дереве процессов — запрещаем
+    // before-quit убивать предка-cmd.exe вместе со всем деревом.
+    applyingUpdate = true
+    updateDiag('updater spawned: pid=' + updater.pid + ' via=' + how)
+  } catch (err) {
+    updateDiag('spawn threw: ' + String(err && err.message ? err.message : err))
+    return { ok: false, error: String(err && err.message ? err.message : err) }
+  }
+
+  // Штатный выход: before-quit само убьёт сервер/ComfyUI/дочерние.
+  quitting = true
+  app.quit()
+  return { ok: true }
+})
+
 function createWindow() {
   win = new BrowserWindow({
     width: 1600,
@@ -531,6 +675,30 @@ function createWindow() {
   })
   // Настоящее десктоп-ощущение: без меню-бара (Alt показывать не нужно).
   Menu.setApplicationMenu(null)
+
+  // Контекстное меню по правому клику (правка 779): в приложении контекстного
+  // меню не было вообще — были недоступны «Вырезать/Копировать/Вставить» в
+  // полях ввода; плюс «Сохранить картинку как…» для изображений (галерея).
+  win.webContents.on('context-menu', (_event, params) => {
+    const menu = new Menu()
+    if (params.mediaType === 'image') {
+      menu.append(new MenuItem({
+        label: 'Сохранить картинку как…',
+        click: () => { win.webContents.downloadURL(params.srcURL) },
+      }))
+      menu.append(new MenuItem({ type: 'separator' }))
+    }
+    if (params.isEditable) {
+      menu.append(new MenuItem({ label: 'Вырезать', role: 'cut' }))
+      menu.append(new MenuItem({ label: 'Копировать', role: 'copy' }))
+      menu.append(new MenuItem({ label: 'Вставить', role: 'paste' }))
+      menu.append(new MenuItem({ type: 'separator' }))
+      menu.append(new MenuItem({ label: 'Выделить всё', role: 'selectAll' }))
+    } else if (params.selectionText) {
+      menu.append(new MenuItem({ label: 'Копировать', role: 'copy' }))
+    }
+    if (menu.items.length > 0) menu.popup()
+  })
 
   // Заставка открывается в обычном размере (правка 565 — НЕ максимизируем
   // при показе). Окно разворачивается на весь экран только при входе в САМО
@@ -648,8 +816,34 @@ function isLocalAppUrl(url) {
 // Раньше app.quit() в ветке «вторая копия» вызывался до регистрации
 // обработчика, и скрытая консоль cmd.exe, созданная start_hidden.vbs для
 // ЭТОГО запуска, оставалась висеть навсегда (невидимый осиротевший процесс).
-app.on('before-quit', () => {
+app.on('before-quit', (event) => {
   quitting = true
+  // (правка 796) Видимый след выхода: по нему видно, дошёл ли апдейтер.
+  updateDiag('before-quit: applyingUpdate=' + applyingUpdate + ' ppid=' + process.ppid)
+  // (правка 804) Chromium пишет localStorage на диск асинхронно, а ниже мы
+  // сами убиваем своё дерево процессов (killAncestorCmd → taskkill /T /F).
+  // Последние изменения настроек (например, выключенный Sol-Attn) не успевали
+  // записаться и после перезапуска возвращались к заводским. Схема: первый
+  // before-quit отменяется, main-процесс принудительно сбрасывает хранилище
+  // сессии на диск (flushStorageData) и даёт renderer'у долю секунды на
+  // sendBeacon из pagehide, затем повторяет app.quit() — второй заход уже
+  // убивает всё как раньше. Во время установки обновления не вмешиваемся
+  // (ветка applyingUpdate и так ничего не убивает, апдейтер сам всё чистит).
+  if (!storageFlushDone && !applyingUpdate) {
+    storageFlushDone = true
+    event.preventDefault()
+    updateDiag('before-quit: flush storage, quit again shortly')
+    let flush = Promise.resolve()
+    try {
+      flush = session.defaultSession.flushStorageData().catch(() => { /* ignore */ })
+    } catch { /* ignore */ }
+    const floor = new Promise((r) => setTimeout(r, 250)) // beacon'ам из pagehide
+    const ceiling = new Promise((r) => setTimeout(r, 800)) // но не вечность
+    Promise.race([Promise.all([flush, floor]), ceiling]).finally(() => {
+      try { app.quit() } catch { /* ignore */ }
+    })
+    return
+  }
   for (const c of children) killTree(c.pid)
   children.clear()
   // (правка 748) Установщик, запущенный НАМИ (spawnChild), уже убит выше.
@@ -668,7 +862,15 @@ app.on('before-quit', () => {
   // проверка «ppid — это cmd.exe» всегда проваливалась, и скрытая консоль
   // оставалась висеть. Поднимаемся по дереву предков (до 6 уровней) и убиваем
   // ближайший cmd.exe деревом (/T /F).
-  killAncestorCmd()
+  // (правка 795) При применении обновления НЕ убиваем: PowerShell-апдейтер
+  // порождён нами и висит в этом же дереве — taskkill /T снёс бы его вместе
+  // с нами. Cmd-предок после нашей гибели сам завершает start.bat.
+  if (applyingUpdate) {
+    console.log('[desktop] применяем обновление — родительский cmd не убиваем')
+    updateDiag('ancestor cmd NOT killed (update in progress)')
+  } else {
+    killAncestorCmd()
+  }
 })
 
 // Вторая копия — фокусирует существующее окно вместо нового процесса.
@@ -702,7 +904,7 @@ if (!app.requestSingleInstanceLock()) {
     killPortListeners(PORT)
     killPortListeners(COMFY_PORT)
 
-    const server = startWebServer()
+    const server = (webServerChild = startWebServer())
     if (existsSync(COMFY_PY)) {
       startComfy()
     } else {

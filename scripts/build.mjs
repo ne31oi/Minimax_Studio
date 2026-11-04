@@ -18,6 +18,7 @@
  *   npm run build:default
  */
 import { spawnSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join, dirname } from 'node:path';
 
@@ -47,15 +48,27 @@ const fix = process.platform === 'win32' ? `--require "${shim.replace(/\\/g, '/'
 const env = { ...process.env, NODE_OPTIONS: [prev, flag, fix].filter(Boolean).join(' ') };
 
 console.log(`[build] next build --webpack  (heap = ${heapMb} MB)`);
-// (правка 716) --no-install: без него npx при отсутствующем node_modules
-// ПРЕДЛОЖИТ скачать next из реестра и спросит «Ok to proceed? (y)» — в
-// неинтерактивном контексте сборка зависала навсегда вместо падения.
-const r = spawnSync(process.execPath, [join(root, 'node_modules', 'next', 'dist', 'bin', 'next'), 'build', '--webpack'], {
-  env,
-  stdio: 'inherit',
-  // На Windows npx это npx.cmd — нужен shell, чтобы он резолвился.
-  shell: false,
-});
+// (правка 790) Next запускается напрямую (node + node_modules/next/dist/bin/next),
+// а не через npx: на машинах без npm в PATH (портативный runtime/node.exe)
+// npx не находится и сборка падала ещё до старта. Если next вдруг нет в
+// node_modules — прежний путь через npx с --no-install (правка 716: без него
+// npx при отсутствующем пакете спрашивает «Ok to proceed?» и навечно висит).
+const nextBin = join(root, 'node_modules', 'next', 'dist', 'bin', 'next');
+let r;
+if (existsSync(nextBin)) {
+  r = spawnSync(process.execPath, [nextBin, 'build', '--webpack'], {
+    env,
+    stdio: 'inherit',
+    shell: false,
+  });
+} else {
+  r = spawnSync('npx', ['--no-install', 'next', 'build', '--webpack'], {
+    env,
+    stdio: 'inherit',
+    // На Windows npx это npx.cmd — нужен shell, чтобы он резолвился.
+    shell: process.platform === 'win32',
+  });
+}
 
 if (r.error) {
   console.error('[build] не удалось запустить next build:', r.error.message);

@@ -9,6 +9,7 @@
  */
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { createMirrorStorage } from '@/lib/settings-storage' // (правка 804)
 
 /* ──────────────────────────── Video Gen ──────────────────────────── */
 
@@ -113,13 +114,9 @@ export interface VideoGenState {
   freeResolution: boolean
   /** Pass 1 low-res resolution in MP (default 0.2). */
   lowResMP: number
-  /** Pass 1 effective sampling steps (SplitSigmas split point, default 6, max 30). */
+  /** (правка 802) Шаги pass 1 — единственный счётчик, сплита сигм нет (default 6, max 30). */
   firstSamplerSteps: number
-  /**
-   * ВСЕГО шагов в расписании BasicScheduler для pass 1.
-   * По умолчанию 6 — столько же, сколько забирает сплит («6 из 6»).
-   * Задаётся отдельно, чтобы можно было взять, например, «6 из 8».
-   */
+  /** @deprecated (правка 802) Сплит убран — поле игнорируется, оставлено для старых состояний. */
   firstSamplerTotalSteps?: number
   /**
    * (правка 719) Шаги клипа в режиме продления.
@@ -178,6 +175,10 @@ export interface VideoGenState {
   chunkFFChunks: number
   /** ChunkFF: sequence length threshold above which chunking kicks in. */
   chunkFFThreshold: number
+  /** (правка 806) MinimaxH3LatentUpscaler3D между pass 1 и pass 2.
+   *  true (default) — обученный 3D-апскейлер латентов; false — простое
+   *  растягивание латента (LatentUpscale): быстрее, легче по VRAM, хуже качество. */
+  latentUpscaler3D: boolean
   /** (правка 91) Активная папка галереи: '' = общая, иначе имя подпапки output.
    *  Вкладка «Генерация» фильтрует галерею по ней и складывает новые видео в неё. */
   outputFolder: string
@@ -218,8 +219,9 @@ export const DEFAULT_VIDEO_STATE: VideoGenState = {
   pass1Sampler: 'euler',
   pass1Scheduler: 'simple',
   turboLoraStrength: 1.0,
-  // (правка 575) SOL-Attn включен по умолчанию; при сбросе к заводским — тоже ON.
-  sparseAttention: true,
+  // (правка 809) SOL-Attn по умолчанию ВЫКЛЮЧЕН (раньше был ON — правка 575).
+  // Заводской сброс тоже возвращает OFF; шаблоны уже трактуют «не true» как OFF.
+  sparseAttention: false,
   sparseTau: 1.3, // (правка 466)
   sparseStartPercent: 0.2, // (правка 466)
   sparseEndPercent: 1.0, // (правка 466)
@@ -236,6 +238,7 @@ export const DEFAULT_VIDEO_STATE: VideoGenState = {
   chunkFeedForward: true,
   chunkFFChunks: 2,
   chunkFFThreshold: 4096,
+  latentUpscaler3D: true, // (правка 806)
   outputFolder: '',
 }
 
@@ -373,6 +376,12 @@ export const useGenStore = create<GenStoreState>()(
       // чтобы поведение не изменилось молча. Ручной выбор делается ПОСЛЕ
       // миграции и уже сохраняется честно.
       version: 8,
+      // (правка 804) Настройки пишутся в два места: localStorage + файл на сервере
+      // (data/settings/h3-gen-store.json). Выбирается более свежая копия, поэтому
+      // жёсткое убийство процесса на выходе, чистка профиля или смена origin
+      // (Electron 127.0.0.1 ↔ браузер localhost) больше не сбрасывают, например,
+      // выключенный Sol-Attn обратно к заводскому «вкл».
+      storage: createMirrorStorage(),
       // (правка 97) Новый дефолт шагов pass 1 = 4 (был 2).
       // Сбрасываем только значение, равное старому дефолту (2), — оно означает
       // «пользователь слайдер не трогал». Осознанный выбор (3–30) сохраняется.
@@ -485,6 +494,9 @@ export const useGenStore = create<GenStoreState>()(
           }
           if (typeof result.video.chunkFFThreshold !== 'number' || isNaN(result.video.chunkFFThreshold)) {
             result.video.chunkFFThreshold = DEFAULT_VIDEO_STATE.chunkFFThreshold
+          }
+          if (typeof result.video.latentUpscaler3D !== 'boolean') {
+            result.video.latentUpscaler3D = DEFAULT_VIDEO_STATE.latentUpscaler3D
           }
           if (!Array.isArray(result.video.refs)) {
             result.video.refs = []

@@ -42,6 +42,10 @@ next-env.d.ts
 # installer cache (скачанные архивы установщика)
 /.install-cache/
 
+# (правка 777) архивы, приложенные к установщику (в setup.exe, не в git:
+# GitHub не принимает файлы >100 МБ, а папка весит ~800 МБ)
+/install/cache/
+
 # ComfyUI portable install (copied separately, huge)
 /ComfyUI-Easy-Install
 
@@ -91,9 +95,17 @@ dlssg-worker.exe
 /data/assistant-chats.json
 /data/inflight-generate.json
 /data/loras.json
+# (правка 804) серверное зеркало клиентских настроек — пользовательские данные
+/data/settings/
 
 # внутренние документы разработки — в GitHub не публикуются
 /docs/
+
+# (правка 790) автосредство обновления: staging/загрузки/логи апдейтера и
+# временная папка сборки update-архива — никогда в git
+/.update/
+/.update-build/
+/Minimax_Studio_update.zip
 
 # релизная инструкция в корне — в git не идёт
 /КАК_ЗАПУСТИТЬ.txt

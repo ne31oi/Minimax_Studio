@@ -15,7 +15,7 @@ import { getAppConfig } from '@/lib/app-config'
 import { sanitizeFolderPath } from '@/lib/gallery-folders' // (правка 495)
 import { resolveSourceLatent } from '@/lib/refine-meta' // (правка 420)
 import { resolveFfmpeg } from '@/lib/thumb'
-import { probeVideoFile } from '@/lib/video-probe'
+import { probeVideoFile, probeHasAudio } from '@/lib/video-probe'
 import { compressRefVideo480 } from '@/lib/ref-video-compress' // (правка 493)
 import { runGeneration, assertGenerationAllowed } from '@/lib/vram-arbiter'
 import type { MiniMaxH3Params } from '@/lib/comfy/minimax-h3-template'
@@ -139,6 +139,22 @@ export async function POST(req: NextRequest) {
         body.refVideos[i].path = await transferStaged(body.refVideos[i].path)
       }
     }
+    // (правка 784) Страховка от «ошибка останавливает очередь»: если у
+    // видео-рефа нет аудиопотка, принудительно выключаем «использовать звук»
+    // — LoadAudio на видео без дорожки падал уже в очереди ComfyUI. Ловятся
+    // все пути: старые сайдкары («Повторить» до правки 785 возвращал
+    // включённую галочку), ассистент, рефы добавленные до правки 783.
+    // hasAudio === null (ffprobe недоступен) — не трогаем.
+    if (body.refVideos?.length) {
+      const cfgGen = getAppConfig()
+      for (const v of body.refVideos) {
+        if (v.includeAudio === false) continue
+        const vp = path.join(cfgGen.inputDir, path.basename(v.path))
+        if (fs.existsSync(vp) && (await probeHasAudio(vp)) === false) {
+          v.includeAudio = false
+        }
+      }
+    }
     // (правка 493) «Сжать видео»: референсы с флагом compress ресайзятся до
     // 480p (короткая сторона, пропорции сохраняются). Подменяем путь ТОЛЬКО
     // для сабмита — в мету уходит оригинальный файл + флаг compress (так
@@ -175,6 +191,42 @@ export async function POST(req: NextRequest) {
     // возвращает сырое клиентское имя, а оно дальше уходит в
     // path.join(input/, ...) — то же, что basename у outputSubfolder (91).
     if (body.extendSourceVideo) body.extendSourceVideo = path.basename(await transferStaged(body.extendSourceVideo))
+
+    // (правка 807) Все референсы должны реально лежать в input/ ComfyUI.
+    // «Повторить»/«Восстановить» подставляют имена из метаданных, но файлы
+    // могли быть загружены в ДРУГОЙ установке, удалены из input/ или
+    // почищены вручную. Раньше ComfyUI отвечал невнятным «Invalid image
+    // file» / падал на LoadVideoPath уже в очереди — пользователь не понимал,
+    // что делать. Проверяем заранее и объясняем причину.
+    {
+      const missing: Array<{ kind: string; name: string }> = []
+      const checkFile = (kind: string, raw: unknown) => {
+        if (typeof raw !== 'string' || !raw) return
+        const name = path.basename(raw)
+        if (!fs.existsSync(path.join(cfg.inputDir, name))) missing.push({ kind, name })
+      }
+      for (const n of body.refImages ?? []) checkFile('картинка-референс', n)
+      for (const v of body.refVideos ?? []) checkFile('видео-референс', v?.path)
+      for (const n of body.refAudios ?? []) checkFile('аудио-референс', n)
+      checkFile('первый кадр', body.firstFrame)
+      checkFile('последний кадр', body.lastFrame)
+      checkFile('исходное видео для продления', body.extendSourceVideo)
+      if (missing.length > 0) {
+        const list = missing.map((m) => `${m.kind} «${m.name}»`).join('; ')
+        return NextResponse.json(
+          {
+            error:
+              `Не найдены файлы в папке input/ ComfyUI: ${list}. ` +
+              'Так бывает, если видео/настройки восстановлены после переустановки ' +
+              'или файлы удалены из input/ ComfyUI вручную. ' +
+              'Уберите эти референсы из списка и загрузите их заново — ' +
+              'либо верните файлы в папку input/ ComfyUI.',
+            missingRefs: missing,
+          },
+          { status: 400 },
+        )
+      }
+    }
 
     // (правка 212) Extend: итоговое разрешение клипов = РАЗМЕР ИСХОДНИКА.
     // Раньше оставался дефолт (16:9 + finalResolution) — клипы генерились

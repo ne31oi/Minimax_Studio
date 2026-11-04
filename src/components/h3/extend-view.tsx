@@ -593,6 +593,7 @@ export function ExtendView() {
       chunkFeedForward: v.chunkFeedForward,
       chunkFFChunks: v.chunkFFChunks,
       chunkFFThreshold: v.chunkFFThreshold,
+      latentUpscaler3D: v.latentUpscaler3D, // (правка 806)
       outputSubfolder: v.extendSourceSubfolder ?? (v.outputFolder || ''), // (правка 363) галерея-источник → папка оригинала
       })
     } catch {
@@ -602,7 +603,7 @@ export function ExtendView() {
   }, [generate, assistantBusy, uploadingVideo, autoClipSteps])
 
   /* ──────────── Gallery ──────────── */
-  const { files: galleryFiles, loading: galleryLoading, load: loadGallery, deleteFile } = useVideoGallery({ phase })
+  const { files: galleryFiles, loading: galleryLoading, load: loadGallery, deleteFile, toggleLike } = useVideoGallery({ phase })
 
   /* ──────────── Badges ──────────── */
   // (правка 291) Итоговая длительность = исходник + все клипы (без учёта
@@ -1394,6 +1395,7 @@ export function ExtendView() {
             loading={galleryLoading}
             onRefresh={loadGallery}
             onDeleteFile={deleteFile}
+            onToggleLike={toggleLike}
             emptyHint="Здесь появятся сгенерированные видео продления. Опишите сцену, добавьте клипы и нажмите «Сгенерировать продление»."
           />
         </div>

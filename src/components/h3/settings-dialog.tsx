@@ -53,8 +53,10 @@ import { DiffusionModelSelector } from './diffusion-model-selector'
 import { ModelMigrationPanel } from './model-migration-panel'
 import { LlmModelSelector } from './llm-model-selector'
 import { VoiceSettingsPanel } from './voice-settings-panel'
-import { MODELS, MODEL_CATEGORIES } from '@/lib/models-config'
+import { MODELS, MODEL_CATEGORIES, getManualRenameHint } from '@/lib/models-config'
 import { useGenStore, DEFAULT_VIDEO_STATE } from '@/lib/gen-store'
+import { pushPrefs } from '@/lib/prefs-sync' // (правка 804)
+import { flushMirror } from '@/lib/settings-storage' // (правка 813)
 import { usePromptHistory } from '@/lib/prompt-history-store'
 import { useGenDurations } from '@/lib/gen-duration-store'
 import { useAssistantChats } from '@/lib/assistant-chats-store'
@@ -65,6 +67,24 @@ import { useTileUpscaleJob } from '@/lib/tile-upscale-job-store'
 import { useControlNetJob } from '@/lib/controlnet-job-store'
 import { useFpsJob } from '@/lib/fps-job-store'
 import { SettingSlider } from './setting-slider'
+import { UpdatePanel } from './update-panel' // (правка 790)
+
+/* (правка 791) Метка версии динамическая: берётся с сервера (package.json),
+ * а не зашита в код — иначе после самообновления пользователь видел бы
+ * старую версию (метка живёт в собранном .next, который тоже подменяется,
+ * но при следующем релизе её пришлось бы править руками). */
+function AboutVersion() {
+  const [ver, setVer] = useState<string | null>(null)
+  useEffect(() => {
+    fetch('/api/update')
+      .then((r) => r.json())
+      .then((j) => setVer(typeof j?.current === 'string' ? j.current : null))
+      .catch(() => { /* сервер недоступен — метка останется прочерком */ })
+  }, [])
+  return (
+    <div className="text-xs text-muted-foreground">{ver ? `Версия ${ver}` : 'Версия …'}</div>
+  )
+}
 import { Label } from '@/components/ui/label'
 
 /* ─── Types ─── */
@@ -132,10 +152,11 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
   const [tab, setTab] = useState<TabId>('general')
   const [loading, setLoading] = useState(false)
   const [connected, setConnected] = useState<boolean | null>(null)
-  const [reserveVram, setReserveVram] = useState(3)
+  // (правка 803) Дефолты reserve/headroom снижены до 1/1 ГБ.
+  const [reserveVram, setReserveVram] = useState(1)
   const [dynamicVram, setDynamicVram] = useState(true)
   // (правка 490) Доп. запас свободной VRAM (--vram-headroom), 0 = выкл
-  const [vramHeadroom, setVramHeadroom] = useState(2)
+  const [vramHeadroom, setVramHeadroom] = useState(1)
   const [llmDevice, setLlmDevice] = useState<'auto' | 'gpu' | 'cpu'>('auto')
   // (правка 257) своя LLM (.gguf + mmproj)
   const [llmCustomModel, setLlmCustomModel] = useState('')
@@ -198,9 +219,10 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
         .then((d) => {
           // сервер клампит в 1–16 (правка 315): `|| 3`
           // превращал сохранённый 0 в 3 при каждом открытии диалога
-          setReserveVram(typeof d.reserve_gb === 'number' ? d.reserve_gb : 3)
+          // (правка 803) fallback — новые дефолты 1/1.
+          setReserveVram(typeof d.reserve_gb === 'number' ? d.reserve_gb : 1)
           setDynamicVram(d.dynamic_vram !== false)
-          setVramHeadroom(typeof d.vram_headroom === 'number' ? d.vram_headroom : 2) // (правка 490)
+          setVramHeadroom(typeof d.vram_headroom === 'number' ? d.vram_headroom : 1) // (правка 490)
           if (['auto', 'gpu', 'cpu'].includes(d.llm_device)) setLlmDevice(d.llm_device)
           if (typeof d.llm_context_size === 'number') setLlmCtxSize(d.llm_context_size)
           if (typeof d.llm_max_output_tokens === 'number') setLlmMaxOut(d.llm_max_output_tokens)
@@ -218,7 +240,7 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
           if (typeof d.video_nvenc_bitrate === 'number') setVideoNvencBitrate(d.video_nvenc_bitrate)
         })
         .catch(() => {
-          setReserveVram(3); setDynamicVram(true); setVramHeadroom(0); setLlmDevice('auto')
+          setReserveVram(1); setDynamicVram(true); setVramHeadroom(1); setLlmDevice('auto')
           setLlmCtxSize(25600); setLlmMaxOut(4096); setLlmVideoVision(false)
           setLlmKvCache('q4_0')
         })
@@ -416,6 +438,10 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
         //    история промптов, чаты, очереди, прогресс, джобы).
         try { localStorage.clear() } catch { /* приватный режим */ }
         try { sessionStorage.clear() } catch { /* приватный режим */ }
+        // (правка 804) Серверное зеркало настроек — удаляем целиком. Без этого
+        // следующий старт молча восстановит настройки из data/settings/*.json,
+        // и «заводской сброс» отменится сам собой.
+        await fetch('/api/settings?all=1', { method: 'DELETE' }).catch(() => {})
 
         if (failed) {
           toast.error('Полный сброс выполнен частично', {
@@ -436,9 +462,10 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            reserve_gb: 3,
+            // (правка 803) заводские значения: reserve 1, headroom 1.
+            reserve_gb: 1,
             dynamic_vram: true,
-            vram_headroom: 2, // (правка 490) заводской запас VRAM
+            vram_headroom: 1, // (правка 490) заводской запас VRAM
             llm_device: 'auto',
             llm_context_size: 25600,       // (правка 119) дефолт контекста — 25K
             llm_max_output_tokens: 4096,
@@ -468,9 +495,9 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
         // (правка 435) Ассистент после сброса — в режиме «Генерация»
         // (дефолт), а не в последнем выбранном режиме «Продление».
         useAssistantChats.getState().setAssistantMode('generate')
-        setReserveVram(3)
+        setReserveVram(1) // (правка 803)
         setDynamicVram(true)
-        setVramHeadroom(0) // (правка 490)
+        setVramHeadroom(1) // (правка 490, 803)
         setLlmDevice('auto')
         setLlmCtxSize(25600)
         setLlmMaxOut(4096)
@@ -650,6 +677,7 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
                 onClick={() => {
                   try {
                     localStorage.removeItem('h3_welcome_seen_v1')
+                    pushPrefs() // (правка 804) дублируем prefs на сервер
                   } catch { /* ignore */ }
                   window.dispatchEvent(new CustomEvent('h3:show-welcome'))
                   onOpenChange(false)
@@ -1065,7 +1093,15 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
                     type="button"
                     role="switch"
                     aria-checked={video.sparseAttention}
-                    onClick={() => patchVideo({ sparseAttention: !video.sparseAttention })}
+                    // (правка 813) Sol-Attn сохраняем сразу: patchVideo пишет в
+                    // localStorage и ставит зеркало в очередь на 800 мс. Если
+                    // приложение закрыть/убить в этом окне, последнее значение
+                    // могло не дойти до data/settings. flushMirror отправляет
+                    // накопленное немедленно — тумблер фиксируется мгновенно.
+                    onClick={() => {
+                      patchVideo({ sparseAttention: !video.sparseAttention })
+                      flushMirror()
+                    }}
                     className={cn(
                       'relative w-10 h-5.5 rounded-full transition-colors shrink-0',
                       video.sparseAttention ? 'bg-emerald-500/70' : 'bg-[var(--surface-4)]',
@@ -1312,6 +1348,36 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
                   </div>
                 )}
               </div>
+
+              {/* 3D-апскейлер латентов (правка 806) */}
+              <div className="space-y-1.5 pt-2 border-t border-border">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="text-xs text-muted-foreground">3D-апскейлер латентов</span>
+                    <p className="text-[10px] text-muted-foreground/60">
+                      Обученный 3D-апскейлер между проходами. Если выключить — латент
+                      просто растягивается: быстрее и экономит VRAM, но качество хуже
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={video.latentUpscaler3D}
+                    onClick={() => patchVideo({ latentUpscaler3D: !video.latentUpscaler3D })}
+                    className={cn(
+                      'relative w-10 h-5.5 rounded-full transition-colors shrink-0',
+                      video.latentUpscaler3D ? 'bg-emerald-500/70' : 'bg-[var(--surface-4)]',
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        'absolute top-0.5 left-0.5 w-4.5 h-4.5 rounded-full bg-white shadow transition-transform',
+                        video.latentUpscaler3D && 'translate-x-[18px]',
+                      )}
+                    />
+                  </button>
+                </div>
+              </div>
             </div>
 
             <Button
@@ -1424,11 +1490,14 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
         {/* ─────────── О программе ─────────── */}
         {tab === 'about' && (
           <div className="space-y-4 py-2">
+            {/* (правка 790) Автосредство обновления — выше остального, чтобы
+                про него не «забыли» прокруткой. */}
+            <UpdatePanel />
             <div className="flex items-center gap-3">
               <img src="/logo.svg" alt="" className="w-10 h-10" />
               <div>
                 <div className="text-sm font-medium">Minimax H3 Studio</div>
-                <div className="text-xs text-muted-foreground">Версия 7.0.2</div>
+                <AboutVersion />{/* (правка 791) версия с сервера, не хардкод */}
               </div>
             </div>
             {/* (правка 484) Текст автора — константа ABOUT_TEXT выше. */}
@@ -1889,6 +1958,10 @@ function ManualDownloadPanel() {
               const isBonsai = m.target === 'bonsai'
               const fullRoot = isBonsai ? bonsaiModelsRoot : comfyModelsRoot
               const fullPath = fullRoot + m.relPath
+              // (правка 769) если по ссылке скачается файл с ДРУГИМ именем, чем
+              // ждёт приложение — подсказать юзеру переименовать (автозагрузка
+              // переименовывает сама, ручной способ — нет).
+              const renameHint = getManualRenameHint(m)
               return (
               <div
                 key={m.id}
@@ -1932,6 +2005,25 @@ function ManualDownloadPanel() {
                     <CopyIcon className="w-3 h-3" />
                   </button>
                 </div>
+                {/* (правка 769) имена в URL и в пути различаются — подсказка */}
+                {renameHint && (
+                  <div className="flex items-center gap-1.5">
+                    <span
+                      className="flex-1 min-w-0 text-[10px] text-amber-300/90"
+                      title="Скачанный по ссылке файл нужно переименовать, иначе приложение его не увидит"
+                    >
+                      ⚠ по ссылке скачается «{renameHint.downloaded}» — переименуйте файл в «{renameHint.expected}»
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => void copy(renameHint.expected, 'Имя файла')}
+                      className="p-0.5 rounded hover:bg-[var(--surface-3)] text-muted-foreground hover:text-foreground shrink-0"
+                      title="Скопировать нужное имя файла"
+                    >
+                      <CopyIcon className="w-3 h-3" />
+                    </button>
+                  </div>
+                )}
               </div>
               )
             })}
@@ -1975,7 +2067,7 @@ function ThemeSwitcher({ first = false }: { first?: boolean }) {
       <div className="grid grid-cols-3 gap-2">
         <button
           type="button"
-          onClick={() => setTheme('dark-gray')}
+          onClick={() => { setTheme('dark-gray'); pushPrefs() /* (правка 804) */ }}
           className={cn(btnBase, theme === 'dark-gray' ? btnActive : btnIdle)}
         >
           <MoonIcon className="w-4 h-4" />
@@ -1983,7 +2075,7 @@ function ThemeSwitcher({ first = false }: { first?: boolean }) {
         </button>
         <button
           type="button"
-          onClick={() => setTheme('dark')}
+          onClick={() => { setTheme('dark'); pushPrefs() /* (правка 804) */ }}
           className={cn(btnBase, theme === 'dark' ? btnActive : btnIdle)}
         >
           <MoonIcon className="w-4 h-4" />
@@ -1991,7 +2083,7 @@ function ThemeSwitcher({ first = false }: { first?: boolean }) {
         </button>
         <button
           type="button"
-          onClick={() => setTheme('dark-calm')}
+          onClick={() => { setTheme('dark-calm'); pushPrefs() /* (правка 804) */ }}
           className={cn(btnBase, theme === 'dark-calm' ? btnActive : btnIdle)}
         >
           <SparklesIcon className="w-4 h-4" />
@@ -2046,6 +2138,7 @@ function UiScaleSwitcher() {
     try {
       localStorage.setItem(UI_SCALE_KEY, String(pct))
       applyUiScale(pct)
+      pushPrefs() // (правка 804) дублируем prefs на сервер
     } catch { /* ignore */ }
   }
 
@@ -2113,6 +2206,7 @@ function SelectTextSwitcher() {
     setOn(next)
     try {
       localStorage.setItem(SELECT_TEXT_KEY, next ? '1' : '0')
+      pushPrefs() // (правка 804) дублируем prefs на сервер
     } catch { /* ignore */ }
     applySelectText(next)
   }

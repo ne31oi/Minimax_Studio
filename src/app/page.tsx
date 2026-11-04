@@ -15,6 +15,8 @@ import { GalleryView } from '@/components/h3/gallery-view'
 import { LearnView } from '@/components/h3/learn/learn-view'
 import { QueueIndicator } from '@/components/queue-indicator'
 import { SettingsDialog } from '@/components/h3/settings-dialog'
+import { PrefsSync } from '@/components/h3/prefs-sync' // (правка 804)
+import { pushPrefs } from '@/lib/prefs-sync' // (правка 804)
 // (правка 112) Всплывающее окно с краткой инструкцией при первом запуске
 import { WelcomeDialog } from '@/components/h3/welcome-dialog'
 import { ModelsWarningBanner } from '@/components/h3/models-warning-banner'
@@ -36,6 +38,7 @@ import { RefModsView } from '@/components/h3/refmods-view'
 import { RefModsPanel } from '@/components/h3/refmods-panel'
 import { REF_MOD_TARGETS, type RefModTarget } from '@/lib/refmods/types'
 import { resumeRefModJobs } from '@/lib/refmods/client-jobs'
+import { toast } from 'sonner' // (правка 790) тосты проверки обновлений
 
 const TAB_CONTENT = {
   refmods: RefModsView,
@@ -69,6 +72,7 @@ export default function Home() {
     if (dontShowAgain) {
       try {
         localStorage.setItem('h3_welcome_seen_v1', '1')
+        pushPrefs() // (правка 804) дублируем prefs на сервер
       } catch { /* ignore */ }
     }
     setWelcomeOpen(false)
@@ -152,6 +156,50 @@ export default function Home() {
     return () => cancelReconcile()
   }, [])
 
+  // (правка 790) Стартовая проверка обновлений студии: тост «доступно
+  // обновление» с кнопкой «Скачать», и «обновление готово» с кнопкой
+  // «Перезапустить», если прошлый раз обновление было скачано и разложено.
+  // Сервер кэширует фид GitHub на 10 минут — лишнего внимания API не будет.
+  useEffect(() => {
+    const t = setTimeout(async () => {
+      try {
+        const res = await fetch('/api/update')
+        const j = await res.json()
+        if (j.armed) {
+          toast.info(`Обновление до v${j.armed.version} готово — перезапустите студию для установки`, {
+            // (правка 794) duration: Infinity — тост не исчезает сам, только
+            // крестиком: стартовое уведомление об обновлении нельзя пропустить.
+            duration: Infinity,
+            action: window.h3desktop?.applyUpdate
+              ? {
+                  label: 'Перезапустить',
+                  onClick: () => void window.h3desktop?.applyUpdate?.(),
+                }
+              : undefined,
+          })
+        } else if (j.update) {
+          toast.warning(`Доступно обновление студии: v${j.update.version}`, {
+            // (правка 794) Не исчезает сам — см. выше.
+            duration: Infinity,
+            action: {
+              label: 'Скачать',
+              onClick: () => {
+                void fetch('/api/update/download', { method: 'POST' })
+                  .then((r) => r.json())
+                  .then((d) => {
+                    if (!d.ok) toast.error(d.error || 'Не удалось начать загрузку')
+                    else toast.success(`Загрузка v${j.update.version} началась — прогресс в Настройках → О программе`)
+                  })
+                  .catch(() => toast.error('Ошибка запроса к серверу'))
+              },
+            },
+          })
+        }
+      } catch { /* сеть/сервер недоступны — молча пропускаем */ }
+    }, 5000)
+    return () => clearTimeout(t)
+  }, [])
+
   const ContentComponent = TAB_CONTENT[activeTab]
 
   return (
@@ -190,6 +238,7 @@ export default function Home() {
       </main>
 
       {/* Settings dialog (connection, GPU memory) — opened from the sidebar */}
+      <PrefsSync />
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
 
       {/* (правка 112) Приветствие при первом запуске — поверх всего */}

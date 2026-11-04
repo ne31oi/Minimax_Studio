@@ -86,6 +86,7 @@ interface MetaJson {
   veda_verbose?: boolean // (правка 405)
   low_vram_attention?: boolean
   chunk_feed_forward?: boolean
+  latent_upscaler_3d?: boolean // (правка 806)
   chunk_ff_chunks?: number
   chunk_ff_threshold?: number
   references?: MetaReference[]
@@ -275,6 +276,9 @@ export async function restoreFromMeta(filePath: string): Promise<boolean> {
     if (typeof params.chunk_feed_forward === 'boolean') {
       patch.chunkFeedForward = params.chunk_feed_forward
     }
+    if (typeof params.latent_upscaler_3d === 'boolean') {
+      patch.latentUpscaler3D = params.latent_upscaler_3d // (правка 806)
+    }
     if (typeof params.chunk_ff_chunks === 'number') {
       patch.chunkFFChunks = params.chunk_ff_chunks
     }
@@ -386,7 +390,10 @@ export async function restoreFromMeta(filePath: string): Promise<boolean> {
               method: 'HEAD',
               signal: AbortSignal.timeout(5000),
             })
-            return res.ok
+            // (правка 782) Роут теперь отвечает на HEAD. Отбрасываем реф только
+            // при точном 404 (файла нет ни на диске, ни в ComfyUI); 502 =
+            // ComfyUI недоступен и на диске не нашли — не отбрасываем молча.
+            return res.status !== 404
           } catch {
             return true // сервер недоступен — не отбрасываем молча
           }

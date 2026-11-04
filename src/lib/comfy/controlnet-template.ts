@@ -55,12 +55,9 @@ export interface ControlNetGenParams {
   pipeline?: 'draft' | 'full'
   /** Low-res MP (для full pipeline, Pass 1). */
   lowResMP?: number
-  /** Pass 1 эффективные шаги (SplitSigmas split point, default 6, max 30). */
+  /** (правка 802) Шаги pass 1 — единственный счётчик, сплита сигм нет (default 6, max 30). */
   firstSamplerSteps?: number
-  /**
-   * Всего шагов в расписании BasicScheduler для pass 1.
-   * undefined = firstSamplerSteps — «6 из 6» по умолчанию.
-   */
+  /** @deprecated (правка 802) Сплит убран — параметр игнорируется. */
   firstSamplerTotalSteps?: number
   /** Custom LoRAs. */
   customLoras?: Array<{ name: string; strength: number }>
@@ -110,6 +107,8 @@ export interface ControlNetGenParams {
   chunkFFChunks?: number
   /** ChunkFF: sequence length threshold. */
   chunkFFThreshold?: number
+  /** (правка 806) 3D-апскейлер латентов между проходами (default true). */
+  latentUpscaler3D?: boolean
   /** Sigma variant (pass 2). */
   sigmaVariant?: string
   /** Pass 1 sampler. */
@@ -485,6 +484,7 @@ export function buildControlNetWorkflow(p: ControlNetGenParams): Record<string, 
     chunkFeedForward: p.chunkFeedForward,
     chunkFFChunks: p.chunkFFChunks,
     chunkFFThreshold: p.chunkFFThreshold,
+    latentUpscaler3D: p.latentUpscaler3D, // (правка 806)
     sigmaVariant: p.sigmaVariant,
     pass1Sampler: p.pass1Sampler,
     pass1Scheduler: p.pass1Scheduler,
